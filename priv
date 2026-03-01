@@ -1368,140 +1368,21 @@ grm.__index = newcclosure(function(self, key)
                 end
             end
             
-            -- C++ Style: Enhanced part selection with multiple modes
             local targetPart = nil
-            local mousePos = UserInputService:GetMouseLocation()
-            
             if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
-                -- C++ Method: Find closest body part to crosshair
-                local bodyparts = GetBodyParts(character)
-                local validCandidates = {}
-                
-                for name, part in pairs(bodyparts) do
-                    if IsValidAddress(part) then
-                        table.insert(validCandidates, part)
-                    end
-                end
-                
-                if #validCandidates > 0 then
-                    local bestPart = nil
-                    local bestDist = math_huge
-                    
-                    for _, part in ipairs(validCandidates) do
-                        local screenpos, onscreen = Camera:WorldToViewportPoint(part.Position)
-                        
-                        local dist
-                        if not onscreen or screenpos.Z <= 0 then
-                            -- Off-screen parts get huge distance but still considered
-                            dist = 999999
-                        else
-                            local dx = screenpos.X - mousePos.X
-                            local dy = screenpos.Y - mousePos.Y
-                            dist = dx * dx + dy * dy
-                        end
-                        
-                        if dist < bestDist then
-                            bestDist = dist
-                            bestPart = part
-                        end
-                    end
-                    
-                    targetPart = bestPart
-                end
-                
-            elseif cfg['silent aimbot']['hitpart'] == 'Closest Point' then
-                -- C++ Method: Find closest point on target's bounding box
-                local hrp = character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local targetScreen, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-                    
-                    if onScreen and targetScreen.Z > 0 then
-                        local bodyparts = GetBodyParts(character)
-                        local screenPositions = {}
-                        
-                        for name, part in pairs(bodyparts) do
-                            if IsValidAddress(part) then
-                                local screenPos, visible = Camera:WorldToViewportPoint(part.Position)
-                                if visible and screenPos.Z > 0 then
-                                    table.insert(screenPositions, Vector2_new(screenPos.X, screenPos.Y))
-                                end
-                            end
-                        end
-                        
-                        if #screenPositions > 0 then
-                            -- Calculate dynamic bounding box
-                            local minX, maxX = screenPositions[1].X, screenPositions[1].X
-                            local minY, maxY = screenPositions[1].Y, screenPositions[1].Y
-                            
-                            for _, pos in ipairs(screenPositions) do
-                                minX = math_min(minX, pos.X)
-                                maxX = math_max(maxX, pos.X)
-                                minY = math_min(minY, pos.Y)
-                                maxY = math_max(maxY, pos.Y)
-                            end
-                            
-                            -- Add padding
-                            local padding = 10
-                            minX = minX - padding
-                            maxX = maxX + padding
-                            minY = minY - padding
-                            maxY = maxY + padding
-                            
-                            -- Find closest point on bounding box
-                            local closestX = math_clamp(mousePos.X, minX, maxX)
-                            local closestY = math_clamp(mousePos.Y, minY, maxY)
-                            
-                            -- Convert back to 3D position (use HRP as reference)
-                            targetPart = hrp
-                        else
-                            targetPart = hrp
-                        end
-                    else
-                        targetPart = hrp
-                    end
-                end
-                
-            elseif cfg['silent aimbot']['hitpart'] == 'Random Part' then
-                -- C++ Method: Random part selection
-                local bodyparts = GetBodyParts(character)
-                local validParts = {}
-                
-                for name, part in pairs(bodyparts) do
-                    if IsValidAddress(part) then
-                        table.insert(validParts, part)
-                    end
-                end
-                
-                if #validParts > 0 then
-                    targetPart = validParts[math.random(1, #validParts)]
-                end
-                
+                local mousePos = UserInputService:GetMouseLocation()
+                targetPart = GetClosestBodyPart(character, mousePos)
             else
-                -- Specific body part
                 targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
             end
             
-            -- Fallback to HRP if no part found
             if not targetPart then
                 targetPart = character:FindFirstChild("HumanoidRootPart")
             end
             
             if targetPart then
-                -- C++ Style: Apply prediction with validation
                 local predpos = PredictedPosition(targetPart, cfg['silent aimbot'])
-                
-                -- Validate position (C++ style checks)
-                if predpos.X == predpos.X and predpos.Y == predpos.Y and predpos.Z == predpos.Z then
-                    -- Check for infinity
-                    if predpos.X ~= math.huge and predpos.X ~= -math.huge and
-                       predpos.Y ~= math.huge and predpos.Y ~= -math.huge and
-                       predpos.Z ~= math.huge and predpos.Z ~= -math.huge then
-                        return CFrame_new(predpos)
-                    end
-                end
-                
-                -- Fallback to non-predicted position
-                return CFrame_new(targetPart.Position)
+                return CFrame_new(predpos)
             end
         end
     end
