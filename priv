@@ -1037,8 +1037,9 @@ local function RefreshESP()
                 
                 esp.nametag.Text = text
                 
-                if CurrentTarget == player then
-                    esp.nametag.Color = Color3.fromRGB(255, 0, 0)
+                -- Check if this player is the current silent aim target
+                if CurrentTarget and CurrentTarget == player.Character then
+                    esp.nametag.Color = cfg['esp']['target color']
                 else
                     esp.nametag.Color = cfg['esp']['color']
                 end
