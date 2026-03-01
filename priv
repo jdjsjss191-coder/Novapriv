@@ -1,5 +1,8 @@
 -- Nova Silent Aim - Working Version
 
+-- Wait 2 seconds before loading
+task.wait(2)
+
 -- Wait for config
 repeat task.wait() until shared.Nova
 local cfg = shared.Nova
