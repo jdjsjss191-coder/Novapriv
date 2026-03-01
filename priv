@@ -1055,30 +1055,145 @@ local function RefreshESP()
 end
 
 -- ============================================================================
--- BULLET DISTANCE HOOK
+-- BULLET TELEPORT SYSTEM
 -- ============================================================================
 
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local args = {...}
-    local method = getnamecallmethod()
+-- Hook workspace to intercept bullet creation
+local function setupBulletTP()
+    local Workspace = game:GetService("Workspace")
+    local Camera = Workspace.CurrentCamera
     
-    if not checkcaller() then
-        -- Hook bullet distance for all weapons
-        if cfg['bullet distance']['enabled'] and method == "FireServer" then
-            if self.Name == "MainEvent" or self.Name == "MAINEVENT" or self.Name == "Remote" or self.Name == "Bullets" then
-                if typeof(args[1]) == "table" and args[1]["Distance"] then
-                    if cfg['bullet distance']['infinite'] then
-                        args[1]["Distance"] = 10000
+    -- Method 1: ChildAdded hook for bullet parts
+    Workspace.ChildAdded:Connect(function(child)
+        if not cfg['bullet tp']['enabled'] then return end
+        if not CurrentTarget then return end
+        
+        task.spawn(function()
+            -- Check if it's a bullet (common bullet names/properties)
+            if child:IsA("BasePart") then
+                local isBullet = false
+                
+                -- Check for bullet indicators
+                if child.Name:lower():find("bullet") or 
+                   child.Name:lower():find("projectile") or
+                   child.Name:lower():find("shot") or
+                   child.Size.Magnitude < 2 then -- Small parts are usually bullets
+                    isBullet = true
+                end
+                
+                if isBullet then
+                    -- Get target part based on silent aim settings
+                    local character = CurrentTarget
+                    if not character then return end
+                    
+                    local targetPart = nil
+                    if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
+                        local mousePos = UserInputService:GetMouseLocation()
+                        targetPart = GetClosestBodyPart(character, mousePos)
                     else
-                        args[1]["Distance"] = cfg['bullet distance']['custom distance']
+                        targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
+                    end
+                    
+                    if not targetPart then
+                        targetPart = character:FindFirstChild("HumanoidRootPart")
+                    end
+                    
+                    if targetPart then
+                        -- Teleport bullet to target with prediction
+                        local predictedPos = PredictedPosition(targetPart, cfg['silent aimbot'])
+                        child.CFrame = CFrame_new(predictedPos)
+                        
+                        -- Set velocity towards target for realistic hit
+                        if child:IsA("BasePart") and child.AssemblyLinearVelocity then
+                            local direction = (predictedPos - child.Position).Unit
+                            child.AssemblyLinearVelocity = direction * 1000
+                        end
                     end
                 end
             end
-        end
+        end)
+    end)
+    
+    -- Method 2: Hook Ignore folder (where bullets often spawn)
+    local ignoreFolder = Workspace:FindFirstChild("Ignore")
+    if ignoreFolder then
+        ignoreFolder.ChildAdded:Connect(function(child)
+            if not cfg['bullet tp']['enabled'] then return end
+            if not CurrentTarget then return end
+            
+            task.spawn(function()
+                if child:IsA("BasePart") then
+                    local character = CurrentTarget
+                    if not character then return end
+                    
+                    local targetPart = nil
+                    if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
+                        local mousePos = UserInputService:GetMouseLocation()
+                        targetPart = GetClosestBodyPart(character, mousePos)
+                    else
+                        targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
+                    end
+                    
+                    if not targetPart then
+                        targetPart = character:FindFirstChild("HumanoidRootPart")
+                    end
+                    
+                    if targetPart then
+                        local predictedPos = PredictedPosition(targetPart, cfg['silent aimbot'])
+                        child.CFrame = CFrame_new(predictedPos)
+                        
+                        if child:IsA("BasePart") and child.AssemblyLinearVelocity then
+                            local direction = (predictedPos - child.Position).Unit
+                            child.AssemblyLinearVelocity = direction * 1000
+                        end
+                    end
+                end
+            end)
+        end)
     end
     
-    return oldNamecall(self, ...)
+    -- Method 3: Monitor Camera for bullet beams/attachments
+    Camera.ChildAdded:Connect(function(child)
+        if not cfg['bullet tp']['enabled'] then return end
+        if not CurrentTarget then return end
+        
+        task.spawn(function()
+            if child:IsA("Beam") or child:IsA("Trail") then
+                -- Bullet tracers - redirect endpoint
+                local character = CurrentTarget
+                if not character then return end
+                
+                local targetPart = nil
+                if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
+                    local mousePos = UserInputService:GetMouseLocation()
+                    targetPart = GetClosestBodyPart(character, mousePos)
+                else
+                    targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
+                end
+                
+                if not targetPart then
+                    targetPart = character:FindFirstChild("HumanoidRootPart")
+                end
+                
+                if targetPart and child:IsA("Beam") then
+                    -- Create attachment at target
+                    local att = Instance.new("Attachment")
+                    att.Parent = targetPart
+                    att.WorldPosition = PredictedPosition(targetPart, cfg['silent aimbot'])
+                    
+                    if child.Attachment1 then
+                        child.Attachment1 = att
+                    end
+                end
+            end
+        end)
+    end)
+end
+
+-- Initialize bullet TP
+task.spawn(function()
+    task.wait(3) -- Wait for game to load
+    setupBulletTP()
 end)
 
 -- ============================================================================
@@ -1087,9 +1202,10 @@ end)
 
 local grm = getrawmetatable(game)
 local oldindex = grm.__index
+local oldnewindex = grm.__newindex
 setreadonly(grm, false)
 
-grm.__index = function(self, key)
+grm.__index = newcclosure(function(self, key)
     if not checkcaller() and self == Mouse and cfg['silent aimbot']['enabled'] then
         if key == "Hit" then
             -- In Select mode, only work when target is locked
@@ -1143,7 +1259,7 @@ grm.__index = function(self, key)
         end
     end
     return oldindex(self, key)
-end
+end)
 
 setreadonly(grm, true)
 
