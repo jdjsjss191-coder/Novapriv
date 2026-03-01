@@ -47,7 +47,7 @@ end)
 local function ModifyBulletDistance()
     if not cfg['bullet distance']['enabled'] then return end
     
-    -- Hook into bullet creation/modification
+    -- Hook __namecall to intercept bullet remotes
     local mt = getrawmetatable(game)
     local oldnamecall = mt.__namecall
     setreadonly(mt, false)
@@ -57,79 +57,46 @@ local function ModifyBulletDistance()
         local method = getnamecallmethod()
         
         if not checkcaller() then
-            -- Hook FireServer for remote bullet events
-            if method == "FireServer" then
+            -- Hook FireServer for bullet remotes
+            if method == "FireServer" or method == "InvokeServer" then
+                -- Check if this is a bullet/damage remote
                 local remoteName = tostring(self)
                 
-                -- Common bullet/damage remotes in Da Hood and similar games
                 if remoteName:find("MainEvent") or 
                    remoteName:find("Damage") or 
-                   remoteName:find("BULLET_HIT") or
-                   remoteName:find("Hit") then
+                   remoteName:find("BULLET") or
+                   remoteName:find("Hit") or
+                   remoteName:find("Remote") then
                     
-                    -- Modify bullet data if present
-                    for i, arg in ipairs(args) do
-                        if type(arg) == "table" then
-                            -- Look for distance/range fields
-                            if arg.Distance or arg.Range or arg.MaxDistance then
-                                if cfg['bullet distance']['infinite'] then
-                                    arg.Distance = math.huge
-                                    arg.Range = math.huge
-                                    arg.MaxDistance = math.huge
-                                else
-                                    local customDist = cfg['bullet distance']['custom distance']
-                                    arg.Distance = customDist
-                                    arg.Range = customDist
-                                    arg.MaxDistance = customDist
-                                end
+                    -- Modify any distance/range arguments
+                    for i = 1, #args do
+                        if type(args[i]) == "table" then
+                            -- Modify distance fields in tables
+                            if args[i].Distance then
+                                args[i].Distance = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
                             end
+                            if args[i].Range then
+                                args[i].Range = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
+                            end
+                            if args[i].MaxDistance then
+                                args[i].MaxDistance = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
+                            end
+                        elseif type(args[i]) == "number" and args[i] > 10 and args[i] < 10000 then
+                            -- Likely a distance value, modify it
+                            args[i] = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
                         end
                     end
                 end
             end
-            
-            -- Hook bullet part creation
-            if method == "Clone" or method == "new" then
-                local result = oldnamecall(self, ...)
-                
-                if result and result:IsA("BasePart") then
-                    local name = result.Name:lower()
-                    if name:find("bullet") or name:find("projectile") then
-                        task.spawn(function()
-                            task.wait(0.05)
-                            
-                            -- Modify bullet lifetime/max distance
-                            local bodyVelocity = result:FindFirstChildOfClass("BodyVelocity")
-                            local bodyForce = result:FindFirstChildOfClass("BodyForce")
-                            
-                            if bodyVelocity then
-                                bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                            end
-                            
-                            -- Prevent bullet despawn by removing destroy scripts
-                            for _, child in pairs(result:GetDescendants()) do
-                                if child:IsA("Script") or child:IsA("LocalScript") then
-                                    local source = getsrc and getsrc(child) or ""
-                                    if source:find("Destroy") or source:find("debris") then
-                                        child:Destroy()
-                                    end
-                                end
-                            end
-                        end)
-                    end
-                end
-                
-                return result
-            end
         end
         
-        return oldnamecall(self, ...)
+        return oldnamecall(self, unpack(args))
     end)
     
     setreadonly(mt, true)
 end
 
--- Hook bullet objects in workspace
+-- Hook workspace bullets
 local function HookBulletObjects()
     if not cfg['bullet distance']['enabled'] then return end
     
@@ -137,23 +104,31 @@ local function HookBulletObjects()
         if not bullet:IsA("BasePart") then return end
         
         local name = bullet.Name:lower()
-        if not (name:find("bullet") or name:find("projectile")) then return end
+        if not (name:find("bullet") or name:find("projectile") or name:find("shot")) then return end
         
-        -- Extend bullet lifetime
         task.spawn(function()
-            local maxTime = cfg['bullet distance']['infinite'] and math.huge or 30
             local startTime = tick()
+            local maxTime = cfg['bullet distance']['infinite'] and math.huge or 30
             
             while bullet and bullet.Parent and (tick() - startTime) < maxTime do
-                -- Keep bullet alive
+                -- Keep bullet alive and maintain velocity
                 if cfg['bullet distance']['infinite'] then
+                    -- Prevent bullet from slowing down
+                    local bodyVelocity = bullet:FindFirstChildOfClass("BodyVelocity")
+                    if bodyVelocity then
+                        if bodyVelocity.Velocity.Magnitude < 500 then
+                            bodyVelocity.Velocity = bodyVelocity.Velocity.Unit * 1000
+                        end
+                    end
+                    
+                    -- Prevent bullet from being destroyed
                     bullet.CanCollide = false
                     
-                    -- Prevent velocity decay
-                    local bodyVelocity = bullet:FindFirstChildOfClass("BodyVelocity")
-                    if bodyVelocity and bodyVelocity.Velocity.Magnitude < 100 then
-                        -- Maintain velocity
-                        bodyVelocity.Velocity = bodyVelocity.Velocity.Unit * 1000
+                    -- Remove any destroy scripts
+                    for _, child in pairs(bullet:GetChildren()) do
+                        if child:IsA("Script") or child:IsA("LocalScript") then
+                            child:Destroy()
+                        end
                     end
                 end
                 
@@ -164,10 +139,12 @@ local function HookBulletObjects()
     
     -- Monitor workspace for new bullets
     Workspace.DescendantAdded:Connect(function(descendant)
-        modifyBullet(descendant)
+        if cfg['bullet distance']['enabled'] then
+            modifyBullet(descendant)
+        end
     end)
     
-    -- Check existing bullets
+    -- Check existing objects
     for _, descendant in pairs(Workspace:GetDescendants()) do
         modifyBullet(descendant)
     end
