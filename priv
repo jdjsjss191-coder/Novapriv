@@ -242,11 +242,6 @@ local LastTriggerClick = 0
 local LastTargetScan = 0
 local ScanRate = 1 / 60
 
--- Camlock State
-local CamlockActive = false
-local CamlockTarget = nil
-local CamlockCachedTarget = nil
-
 -- Rapid Fire State
 local RapidFireActive = false
 
@@ -792,51 +787,6 @@ local function CalculateTargetPartPosition(target, config)
     return partpos
 end
 
-local function FindCamlockTarget()
-    if HoldingKnife() then return nil end
-    
-    local mousePos = UserInputService:GetMouseLocation()
-    local fovcfg = cfg['camlock']['fov']
-    local distcfg = cfg['camlock']['distance']
-    local fovSizeSquared = fovcfg and fovcfg['enabled'] and (fovcfg['size'] * fovcfg['size']) or math_huge
-    
-    local closestPlayer = nil
-    local closestDistSquared = math_huge
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if not player.Character then continue end
-        if not IsValidAddress(player.Character) then continue end
-        
-        local head = player.Character:FindFirstChild("Head")
-        if not head then continue end
-        if IsSameTeam(player) then continue end
-        if PlayerDead(player) then continue end
-        if PlayerKnocked(player) then continue end
-        if PlayerGrabbed(player) then continue end
-        
-        local screenCoords, onScreen = Camera:WorldToViewportPoint(head.Position)
-        if not onScreen or screenCoords.Z <= 0 then continue end
-        
-        local screenPos2D = Vector2_new(screenCoords.X, screenCoords.Y)
-        local dx = mousePos.X - screenPos2D.X
-        local dy = mousePos.Y - screenPos2D.Y
-        local distSquared = dx * dx + dy * dy
-        
-        if fovcfg and fovcfg['enabled'] and distSquared > fovSizeSquared then continue end
-        
-        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp and not WithinDistance(hrp, distcfg) then continue end
-        
-        if distSquared < closestDistSquared then
-            closestDistSquared = distSquared
-            closestPlayer = player
-        end
-    end
-    
-    return closestPlayer
-end
-
 -- ============================================================================
 -- FOV VISUALIZATION - DISABLED
 -- ============================================================================
@@ -1158,59 +1108,6 @@ end
 setreadonly(grm, true)
 
 -- ============================================================================
--- CAMLOCK LOOP
--- ============================================================================
-
-local function CamlockLoop()
-    while true do
-        task.wait()
-        
-        if not cfg['camlock']['enabled'] or not CamlockActive then
-            CamlockTarget = nil
-            continue
-        end
-        
-        if SelfKnocked() then
-            CamlockTarget = nil
-            CamlockCachedTarget = nil
-            CamlockActive = false
-            continue
-        end
-        
-        -- Validate cached target
-        if CamlockCachedTarget then
-            local isValid = true
-            if not CamlockCachedTarget.Character then
-                isValid = false
-            elseif PlayerDead(CamlockCachedTarget) then
-                isValid = false
-            elseif PlayerKnocked(CamlockCachedTarget) then
-                isValid = false
-            elseif PlayerGrabbed(CamlockCachedTarget) then
-                isValid = false
-            end
-            
-            if isValid then
-                CamlockTarget = CamlockCachedTarget
-            else
-                CamlockCachedTarget = nil
-                CamlockTarget = nil
-                CamlockActive = false
-            end
-        else
-            -- Find new target
-            local target = FindCamlockTarget()
-            if target then
-                CamlockTarget = target
-                CamlockCachedTarget = target
-            else
-                CamlockTarget = nil
-            end
-        end
-    end
-end
-
--- ============================================================================
 -- TARGET ACQUISITION LOOP
 -- ============================================================================
 
@@ -1358,23 +1255,6 @@ end
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     
-    local camlockKey = cfg['binds']['camlock']
-    if input.KeyCode.Name == camlockKey then
-        if cfg['camlock']['mode'] == 'Toggle' then
-            if CamlockActive then
-                CamlockActive = false
-                CamlockTarget = nil
-                CamlockCachedTarget = nil
-            else
-                CamlockActive = true
-            end
-        elseif cfg['camlock']['mode'] == 'Hold' then
-            if not CamlockActive then
-                CamlockActive = true
-            end
-        end
-    end
-    
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
@@ -1433,15 +1313,6 @@ end)
 UserInputService.InputEnded:Connect(function(input, processed)
     if processed then return end
     
-    local camlockKey = cfg['binds']['camlock']
-    if input.KeyCode.Name == camlockKey then
-        if cfg['camlock']['mode'] == 'Hold' then
-            CamlockActive = false
-            CamlockTarget = nil
-            CamlockCachedTarget = nil
-        end
-    end
-    
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
@@ -1462,42 +1333,6 @@ end)
 -- ============================================================================
 
 RunService.RenderStepped:Connect(function(dt)
-    -- Camlock camera manipulation
-    if CamlockActive and CamlockTarget and cfg['camlock']['enabled'] then
-        local char = CamlockTarget.Character
-        if char then
-            local targetPart = char:FindFirstChild(cfg['camlock']['hitpart'])
-            if not targetPart then
-                targetPart = char:FindFirstChild("HumanoidRootPart")
-            end
-            
-            if targetPart then
-                -- Check distance to prevent spazzing when too close
-                local myChar = LocalPlayer.Character
-                if myChar then
-                    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-                    if myHRP then
-                        local distance = (myHRP.Position - targetPart.Position).Magnitude
-                        
-                        -- Only apply camlock if not too close (prevents spazzing)
-                        if distance > 3 then
-                            local predictedPos = PredictedPosition(targetPart, cfg['camlock'])
-                            local currentCFrame = Camera.CFrame
-                            
-                            -- Calculate target look direction
-                            local lookVector = (predictedPos - currentCFrame.Position).Unit
-                            local targetCFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + lookVector)
-                            
-                            -- Apply smoothness with clamped value
-                            local smoothness = math.clamp(cfg['camlock']['smoothness'], 0.01, 1)
-                            Camera.CFrame = currentCFrame:Lerp(targetCFrame, smoothness)
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
     TriggerBot()
     
     if SuperJumpEnabled and cfg['movement']['super jump']['enabled'] then
@@ -1570,7 +1405,6 @@ end)
 -- ============================================================================
 
 task.spawn(SilentAimTargetLoop)
-task.spawn(CamlockLoop)
 
 -- Start Rapid Fire if enabled
 if cfg['rapid fire'] and cfg['rapid fire']['enabled'] then
