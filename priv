@@ -17,13 +17,11 @@ SniperDBHook = hookfunction(math.random, function(...)
         return SniperDBHook(...)
     end
     
-    -- Detect bullet spread calls (works for all weapons including Revolver)
+    -- Detect bullet spread calls
     if (#args == 0) or 
        (args[1] == -0.05 and args[2] == 0.05) or 
-       (args[1] == -0.1 and args[2] == 0.1) or
        (args[1] == -0.1) or 
-       (args[1] == -0.05) or
-       (args[1] == 0 and args[2] == 1) then -- Revolver spread pattern
+       (args[1] == -0.05) then
         if cfg['sniper db']['enabled'] then
             return SniperDBHook(...) * (cfg['sniper db']['spread amount'] / 100)
         end
@@ -32,7 +30,7 @@ SniperDBHook = hookfunction(math.random, function(...)
     return SniperDBHook(...)
 end)
 
-print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%) - Works with all weapons including Revolver")
+print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
 
 -- ============================================================================
 -- HITBOX EXPANDER
