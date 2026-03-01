@@ -1330,7 +1330,17 @@ end
 
 local grm = getrawmetatable(game)
 local oldindex = grm.__index
-setreadonly(grm, false)
+
+-- Try different methods to make metatable writable
+local success = pcall(function()
+    setreadonly(grm, false)
+end)
+
+if not success then
+    pcall(function()
+        make_writeable(grm)
+    end)
+end
 
 grm.__index = newcclosure(function(self, key)
     if not checkcaller() and self == Mouse and cfg['silent aimbot']['enabled'] then
@@ -1388,7 +1398,10 @@ grm.__index = newcclosure(function(self, key)
     return oldindex(self, key)
 end)
 
-setreadonly(grm, true)
+-- Try to set back to readonly
+pcall(function()
+    setreadonly(grm, true)
+end)
 
 -- ============================================================================
 -- CAMLOCK LOOP
