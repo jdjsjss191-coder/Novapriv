@@ -176,6 +176,7 @@ local math_max = math.max
 local math_clamp = math.clamp
 local math_floor = math.floor
 local math_abs = math.abs
+local math_random = math.random
 local Vector2_new = Vector2.new
 local Vector3_new = Vector3.new
 local CFrame_new = CFrame.new
@@ -193,6 +194,8 @@ local LastTriggerClick = 0
 local LastTargetScan = 0
 local ScanRate = 1 / 60
 local LastVisibleTarget = nil
+local CachedPartPos = Vector2_new(0, 0)
+local DataReady = false
 
 -- Camlock State
 local CamlockActive = false
@@ -1055,146 +1058,274 @@ local function RefreshESP()
 end
 
 -- ============================================================================
--- BULLET TELEPORT SYSTEM
+-- BULLET DISTANCE HOOK (EVERY METHOD POSSIBLE)
 -- ============================================================================
 
--- Hook workspace to intercept bullet creation
-local function setupBulletTP()
-    local Workspace = game:GetService("Workspace")
-    local Camera = Workspace.CurrentCamera
+local BULLET_DISTANCE = cfg['bullet distance']['distance'] or 9999
+
+-- Method 1: Namecall hook for all RemoteEvent/RemoteFunction calls
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    local method = getnamecallmethod()
     
-    -- Method 1: ChildAdded hook for bullet parts
-    Workspace.ChildAdded:Connect(function(child)
-        if not cfg['bullet tp']['enabled'] then return end
-        if not CurrentTarget then return end
-        
-        task.spawn(function()
-            -- Check if it's a bullet (common bullet names/properties)
-            if child:IsA("BasePart") then
-                local isBullet = false
-                
-                -- Check for bullet indicators
-                if child.Name:lower():find("bullet") or 
-                   child.Name:lower():find("projectile") or
-                   child.Name:lower():find("shot") or
-                   child.Size.Magnitude < 2 then -- Small parts are usually bullets
-                    isBullet = true
-                end
-                
-                if isBullet then
-                    -- Get target part based on silent aim settings
-                    local character = CurrentTarget
-                    if not character then return end
+    if not checkcaller() and cfg['bullet distance']['enabled'] then
+        if method == "FireServer" or method == "InvokeServer" then
+            -- Check if any argument is a table with distance-related fields
+            for i = 1, #args do
+                if type(args[i]) == "table" then
+                    -- Hook all possible distance field names
+                    if args[i].Distance then args[i].Distance = BULLET_DISTANCE end
+                    if args[i].distance then args[i].distance = BULLET_DISTANCE end
+                    if args[i].MaxDistance then args[i].MaxDistance = BULLET_DISTANCE end
+                    if args[i].maxDistance then args[i].maxDistance = BULLET_DISTANCE end
+                    if args[i].Range then args[i].Range = BULLET_DISTANCE end
+                    if args[i].range then args[i].range = BULLET_DISTANCE end
+                    if args[i].MaxRange then args[i].MaxRange = BULLET_DISTANCE end
+                    if args[i].maxRange then args[i].maxRange = BULLET_DISTANCE end
+                    if args[i].BulletDistance then args[i].BulletDistance = BULLET_DISTANCE end
+                    if args[i].bulletDistance then args[i].bulletDistance = BULLET_DISTANCE end
                     
-                    local targetPart = nil
-                    if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
-                        local mousePos = UserInputService:GetMouseLocation()
-                        targetPart = GetClosestBodyPart(character, mousePos)
-                    else
-                        targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
-                    end
-                    
-                    if not targetPart then
-                        targetPart = character:FindFirstChild("HumanoidRootPart")
-                    end
-                    
-                    if targetPart then
-                        -- Teleport bullet to target with prediction
-                        local predictedPos = PredictedPosition(targetPart, cfg['silent aimbot'])
-                        child.CFrame = CFrame_new(predictedPos)
-                        
-                        -- Set velocity towards target for realistic hit
-                        if child:IsA("BasePart") and child.AssemblyLinearVelocity then
-                            local direction = (predictedPos - child.Position).Unit
-                            child.AssemblyLinearVelocity = direction * 1000
+                    -- Deep scan for nested tables
+                    for key, value in pairs(args[i]) do
+                        if type(value) == "table" then
+                            if value.Distance then value.Distance = BULLET_DISTANCE end
+                            if value.distance then value.distance = BULLET_DISTANCE end
+                            if value.Range then value.Range = BULLET_DISTANCE end
+                            if value.range then value.range = BULLET_DISTANCE end
                         end
                     end
                 end
             end
-        end)
-    end)
+        end
+    end
     
-    -- Method 2: Hook Ignore folder (where bullets often spawn)
-    local ignoreFolder = Workspace:FindFirstChild("Ignore")
-    if ignoreFolder then
-        ignoreFolder.ChildAdded:Connect(function(child)
-            if not cfg['bullet tp']['enabled'] then return end
-            if not CurrentTarget then return end
-            
-            task.spawn(function()
-                if child:IsA("BasePart") then
-                    local character = CurrentTarget
-                    if not character then return end
-                    
-                    local targetPart = nil
-                    if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
-                        local mousePos = UserInputService:GetMouseLocation()
-                        targetPart = GetClosestBodyPart(character, mousePos)
-                    else
-                        targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
-                    end
-                    
-                    if not targetPart then
-                        targetPart = character:FindFirstChild("HumanoidRootPart")
-                    end
-                    
-                    if targetPart then
-                        local predictedPos = PredictedPosition(targetPart, cfg['silent aimbot'])
-                        child.CFrame = CFrame_new(predictedPos)
-                        
-                        if child:IsA("BasePart") and child.AssemblyLinearVelocity then
-                            local direction = (predictedPos - child.Position).Unit
-                            child.AssemblyLinearVelocity = direction * 1000
+    return oldNamecall(self, ...)
+end)
+
+-- Method 2: Hook getupvalue/setupvalue for distance modifications
+local oldGetupvalue = debug.getupvalue
+local oldSetupvalue = debug.setupvalue
+
+debug.getupvalue = function(func, index)
+    local name, value = oldGetupvalue(func, index)
+    if cfg['bullet distance']['enabled'] and name then
+        local lowerName = name:lower()
+        if lowerName:find("distance") or lowerName:find("range") then
+            if type(value) == "number" and value < BULLET_DISTANCE then
+                return name, BULLET_DISTANCE
+            end
+        end
+    end
+    return name, value
+end
+
+debug.setupvalue = function(func, index, value)
+    local name = oldGetupvalue(func, index)
+    if cfg['bullet distance']['enabled'] and name then
+        local lowerName = name:lower()
+        if lowerName:find("distance") or lowerName:find("range") then
+            if type(value) == "number" and value < BULLET_DISTANCE then
+                value = BULLET_DISTANCE
+            end
+        end
+    end
+    return oldSetupvalue(func, index, value)
+end
+
+-- Method 3: Hook getconstant/setconstant for hardcoded distance values
+local oldGetconstant = debug.getconstant
+local oldSetconstant = debug.setconstant
+
+debug.getconstant = function(func, index)
+    local value = oldGetconstant(func, index)
+    if cfg['bullet distance']['enabled'] then
+        if type(value) == "number" and value > 0 and value < 1000 then
+            -- Likely a distance constant, replace it
+            return BULLET_DISTANCE
+        end
+    end
+    return value
+end
+
+debug.setconstant = function(func, index, value)
+    if cfg['bullet distance']['enabled'] then
+        if type(value) == "number" and value > 0 and value < 1000 then
+            value = BULLET_DISTANCE
+        end
+    end
+    return oldSetconstant(func, index, value)
+end
+
+-- Method 4: Hook ReplicatedStorage remotes directly
+task.spawn(function()
+    task.wait(3)
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    
+    local function hookRemote(remote)
+        if not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then return end
+        
+        pcall(function()
+            local oldFireServer = remote.FireServer
+            remote.FireServer = newcclosure(function(self, ...)
+                local args = {...}
+                if cfg['bullet distance']['enabled'] then
+                    for i = 1, #args do
+                        if type(args[i]) == "table" then
+                            if args[i].Distance then args[i].Distance = BULLET_DISTANCE end
+                            if args[i].distance then args[i].distance = BULLET_DISTANCE end
+                            if args[i].MaxDistance then args[i].MaxDistance = BULLET_DISTANCE end
+                            if args[i].maxDistance then args[i].maxDistance = BULLET_DISTANCE end
+                            if args[i].Range then args[i].Range = BULLET_DISTANCE end
+                            if args[i].range then args[i].range = BULLET_DISTANCE end
                         end
                     end
                 end
+                return oldFireServer(self, unpack(args))
             end)
         end)
     end
     
-    -- Method 3: Monitor Camera for bullet beams/attachments
-    Camera.ChildAdded:Connect(function(child)
-        if not cfg['bullet tp']['enabled'] then return end
-        if not CurrentTarget then return end
+    -- Hook existing remotes
+    for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+        hookRemote(remote)
+    end
+    
+    -- Hook new remotes
+    ReplicatedStorage.DescendantAdded:Connect(hookRemote)
+end)
+
+-- Method 5: Hook tool activation and modify gun modules
+task.spawn(function()
+    local player = game:GetService("Players").LocalPlayer
+    repeat task.wait() until player.Character
+    
+    local function hookTool(tool)
+        if not tool:IsA("Tool") then return end
         
         task.spawn(function()
-            if child:IsA("Beam") or child:IsA("Trail") then
-                -- Bullet tracers - redirect endpoint
-                local character = CurrentTarget
-                if not character then return end
-                
-                local targetPart = nil
-                if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
-                    local mousePos = UserInputService:GetMouseLocation()
-                    targetPart = GetClosestBodyPart(character, mousePos)
-                else
-                    targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
-                end
-                
-                if not targetPart then
-                    targetPart = character:FindFirstChild("HumanoidRootPart")
-                end
-                
-                if targetPart and child:IsA("Beam") then
-                    -- Create attachment at target
-                    local att = Instance.new("Attachment")
-                    att.Parent = targetPart
-                    att.WorldPosition = PredictedPosition(targetPart, cfg['silent aimbot'])
-                    
-                    if child.Attachment1 then
-                        child.Attachment1 = att
+            task.wait(0.5)
+            
+            -- Find gun module/script
+            for _, obj in pairs(tool:GetDescendants()) do
+                if obj:IsA("ModuleScript") then
+                    local success, module = pcall(require, obj)
+                    if success and type(module) == "table" then
+                        -- Hook distance fields in gun modules
+                        if cfg['bullet distance']['enabled'] then
+                            if module.Distance then module.Distance = BULLET_DISTANCE end
+                            if module.distance then module.distance = BULLET_DISTANCE end
+                            if module.Range then module.Range = BULLET_DISTANCE end
+                            if module.range then module.range = BULLET_DISTANCE end
+                            if module.MaxDistance then module.MaxDistance = BULLET_DISTANCE end
+                            if module.maxDistance then module.maxDistance = BULLET_DISTANCE end
+                            
+                            -- Hook nested tables
+                            for key, value in pairs(module) do
+                                if type(value) == "table" then
+                                    if value.Distance then value.Distance = BULLET_DISTANCE end
+                                    if value.distance then value.distance = BULLET_DISTANCE end
+                                    if value.Range then value.Range = BULLET_DISTANCE end
+                                    if value.range then value.range = BULLET_DISTANCE end
+                                end
+                            end
+                        end
                     end
                 end
             end
         end)
+    end
+    
+    -- Hook existing tools
+    for _, tool in pairs(player.Character:GetChildren()) do
+        hookTool(tool)
+    end
+    
+    for _, tool in pairs(player.Backpack:GetChildren()) do
+        hookTool(tool)
+    end
+    
+    -- Hook new tools
+    player.Character.ChildAdded:Connect(hookTool)
+    player.Backpack.ChildAdded:Connect(hookTool)
+    
+    player.CharacterAdded:Connect(function(char)
+        char.ChildAdded:Connect(hookTool)
     end)
+end)
+
+-- Method 6: Hook workspace bullets and modify their properties
+task.spawn(function()
+    local Workspace = game:GetService("Workspace")
+    
+    local function hookBullet(bullet)
+        if not bullet:IsA("BasePart") then return end
+        if not cfg['bullet distance']['enabled'] then return end
+        
+        -- Check if it's a bullet
+        local isBullet = bullet.Name:lower():find("bullet") or 
+                        bullet.Name:lower():find("projectile") or
+                        bullet.Size.Magnitude < 2
+        
+        if isBullet then
+            task.spawn(function()
+                -- Extend bullet lifetime
+                if bullet:FindFirstChild("BodyVelocity") then
+                    bullet.BodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                end
+                
+                -- Prevent bullet from being destroyed too early
+                local connection
+                connection = bullet.AncestryChanged:Connect(function()
+                    if not bullet.Parent and cfg['bullet distance']['enabled'] then
+                        task.wait(0.1)
+                        if bullet then
+                            bullet.Parent = Workspace
+                        end
+                    end
+                end)
+                
+                task.delay(10, function()
+                    if connection then connection:Disconnect() end
+                end)
+            end)
+        end
+    end
+    
+    Workspace.ChildAdded:Connect(hookBullet)
+    
+    local ignore = Workspace:FindFirstChild("Ignore")
+    if ignore then
+        ignore.ChildAdded:Connect(hookBullet)
+    end
+end)
+
+-- Method 7: Hook math.clamp to prevent distance clamping
+local oldClamp = math.clamp
+math.clamp = function(value, min, max)
+    if cfg['bullet distance']['enabled'] then
+        -- If clamping a distance value, use our distance
+        if type(value) == "number" and type(max) == "number" then
+            if max < 1000 and value > max then
+                return BULLET_DISTANCE
+            end
+        end
+    end
+    return oldClamp(value, min, max)
 end
 
--- Initialize bullet TP
-task.spawn(function()
-    task.wait(3) -- Wait for game to load
-    setupBulletTP()
-end)
+-- Method 8: Hook CFrame distance calculations
+local oldCFrameNew = CFrame.new
+CFrame.new = function(...)
+    local args = {...}
+    if cfg['bullet distance']['enabled'] and #args >= 3 then
+        -- Check if this is a bullet trajectory calculation
+        if type(args[1]) == "number" and type(args[2]) == "number" and type(args[3]) == "number" then
+            -- Let it through normally, but we've hooked other methods
+        end
+    end
+    return oldCFrameNew(...)
+end
 
 -- ============================================================================
 -- SILENT AIM HOOK (Glory Style - Target Lock Based)
