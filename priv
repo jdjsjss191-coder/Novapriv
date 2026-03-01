@@ -1296,7 +1296,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     
     local camlockKey = cfg['binds']['camlock']
     if input.KeyCode.Name == camlockKey then
-        if cfg['camlock']['function'] == 'Toggle' then
+        if cfg['camlock']['mode'] == 'Toggle' then
             if CamlockActive then
                 CamlockActive = false
                 CamlockTarget = nil
@@ -1304,7 +1304,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
             else
                 CamlockActive = true
             end
-        elseif cfg['camlock']['function'] == 'Hold' then
+        elseif cfg['camlock']['mode'] == 'Hold' then
             if not CamlockActive then
                 CamlockActive = true
             end
@@ -1314,7 +1314,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
-            if cfg['silent aimbot']['function'] == 'Toggle' then
+            if cfg['silent aimbot']['mode type'] == 'Toggle' then
                 -- Toggle mode: press once to lock, press again to unlock
                 if SilentAimActive then
                     -- Unlock current target
@@ -1327,7 +1327,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
                     -- Lock onto new target
                     SilentAimActive = true
                 end
-            elseif cfg['silent aimbot']['function'] == 'Hold' then
+            elseif cfg['silent aimbot']['mode type'] == 'Hold' then
                 -- Hold mode: hold to lock, release to unlock
                 if not SilentAimActive then
                     SilentAimActive = true
@@ -1371,7 +1371,7 @@ UserInputService.InputEnded:Connect(function(input, processed)
     
     local camlockKey = cfg['binds']['camlock']
     if input.KeyCode.Name == camlockKey then
-        if cfg['camlock']['function'] == 'Hold' then
+        if cfg['camlock']['mode'] == 'Hold' then
             CamlockActive = false
             CamlockTarget = nil
             CamlockCachedTarget = nil
@@ -1381,7 +1381,7 @@ UserInputService.InputEnded:Connect(function(input, processed)
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
-            if cfg['silent aimbot']['function'] == 'Hold' then
+            if cfg['silent aimbot']['mode type'] == 'Hold' then
                 -- Release to unlock
                 SilentAimActive = false
                 CurrentTarget = nil
