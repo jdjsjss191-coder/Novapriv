@@ -1,43 +1,66 @@
 -- Nova Silent Aim - Working Version
-print("Loading Nova Silent Aim...")
+
+-- Wait 2 seconds before loading
+task.wait(2)
 
 -- Wait for config
 repeat task.wait() until shared.Nova
 local cfg = shared.Nova
-print("Config loaded!")
+
+-- Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+-- Locals
+local LocalPlayer = Players.LocalPlayer
+repeat task.wait() until LocalPlayer.Character
+local Mouse = LocalPlayer:GetMouse()
+local Camera = Workspace.CurrentCamera
 
 -- ============================================================================
--- SNIPER DB (NO SPREAD) HOOK
+-- SPREAD CONTROL HOOK
 -- ============================================================================
 
-local SniperDBHook
-SniperDBHook = hookfunction(math.random, function(...)
+local oldRandom
+oldRandom = hookfunction(math.random, function(...)
     local args = {...}
     if checkcaller() then
-        return SniperDBHook(...)
+        return oldRandom(...)
     end
     
     -- Detect bullet spread calls
-    if (#args == 0) or 
-       (args[1] == -0.05 and args[2] == 0.05) or 
-       (args[1] == -0.1) or 
-       (args[1] == -0.05) then
-        if cfg['sniper db']['enabled'] then
-            return SniperDBHook(...) * (cfg['sniper db']['spread amount'] / 100)
+    if (#args == 0) or (args[1] == -0.05 and args[2] == 0.05) or (args[1] == -0.1) or (args[1] == -0.05) then
+        if cfg['spread']['enabled'] then
+            if cfg['spread']['specific weapons']['enabled'] then
+                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                if tool then
+                    local weaponName = tool.Name
+                    local foundWeapon = false
+                    for _, weapon in pairs(cfg['spread']['specific weapons']['weapons']) do
+                        if weaponName == weapon then
+                            foundWeapon = true
+                            break
+                        end
+                    end
+                    if foundWeapon then
+                        return oldRandom(...) * (cfg['spread']['amount'] / 100)
+                    end
+                end
+            else
+                return oldRandom(...) * (cfg['spread']['amount'] / 100)
+            end
         end
     end
     
-    return SniperDBHook(...)
+    return oldRandom(...)
 end)
-
-print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
 
 -- ============================================================================
 -- HITBOX EXPANDER
 -- ============================================================================
 
-local Players = game:GetService('Players')
-local RunService = game:GetService('RunService')
 local EnumMaterial = Enum.Material.Neon
 
 -- Initialize hitbox state
@@ -145,20 +168,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("Hitbox Expander loaded! (Size: " .. cfg['hitbox expander']['size'] .. ", Transparency: " .. cfg['hitbox expander']['transparency'] .. ")")
-
--- Services
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-
--- Locals
-local LocalPlayer = Players.LocalPlayer
-repeat task.wait() until LocalPlayer.Character
-local Mouse = LocalPlayer:GetMouse()
-local Camera = Workspace.CurrentCamera
-
 -- Performance Optimizations
 local math_sqrt = math.sqrt
 local math_huge = math.huge
@@ -183,6 +192,12 @@ local SuperJumpEnabled = false
 local LastTriggerClick = 0
 local LastTargetScan = 0
 local ScanRate = 1 / 60
+local LastVisibleTarget = nil
+
+-- Camlock State
+local CamlockActive = false
+local CamlockTarget = nil
+local CamlockCachedTarget = nil
 
 -- Rapid Fire State
 local RapidFireActive = false
@@ -211,8 +226,6 @@ local FOV2DBoxes = {
 local RayParams = RaycastParams.new()
 RayParams.FilterType = Enum.RaycastFilterType.Exclude
 RayParams.IgnoreWater = true
-
-print("Drawing objects created!")
 
 -- ============================================================================
 -- UTILITY FUNCTIONS
@@ -453,8 +466,6 @@ local function PredictedPosition(part, config)
         vel.Z * predZ
     )
 end
-
-print("Utility functions loaded!")
 
 -- ============================================================================
 -- FOV FUNCTIONS
@@ -733,7 +744,50 @@ local function CalculateTargetPartPosition(target, config)
     return partpos
 end
 
-print("Target finding functions loaded!")
+local function FindCamlockTarget()
+    if HoldingKnife() then return nil end
+    
+    local mousePos = UserInputService:GetMouseLocation()
+    local fovcfg = cfg['camlock']['fov']
+    local distcfg = cfg['camlock']['distance']
+    local fovSizeSquared = fovcfg and fovcfg['enabled'] and (fovcfg['size'] * fovcfg['size']) or math_huge
+    
+    local closestPlayer = nil
+    local closestDistSquared = math_huge
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not player.Character then continue end
+        if not IsValidAddress(player.Character) then continue end
+        
+        local head = player.Character:FindFirstChild("Head")
+        if not head then continue end
+        if IsSameTeam(player) then continue end
+        if PlayerDead(player) then continue end
+        if PlayerKnocked(player) then continue end
+        if PlayerGrabbed(player) then continue end
+        
+        local screenCoords, onScreen = Camera:WorldToViewportPoint(head.Position)
+        if not onScreen or screenCoords.Z <= 0 then continue end
+        
+        local screenPos2D = Vector2_new(screenCoords.X, screenCoords.Y)
+        local dx = mousePos.X - screenPos2D.X
+        local dy = mousePos.Y - screenPos2D.Y
+        local distSquared = dx * dx + dy * dy
+        
+        if fovcfg and fovcfg['enabled'] and distSquared > fovSizeSquared then continue end
+        
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and not WithinDistance(hrp, distcfg) then continue end
+        
+        if distSquared < closestDistSquared then
+            closestDistSquared = distSquared
+            closestPlayer = player
+        end
+    end
+    
+    return closestPlayer
+end
 
 -- ============================================================================
 -- FOV VISUALIZATION - DISABLED
@@ -983,8 +1037,9 @@ local function RefreshESP()
                 
                 esp.nametag.Text = text
                 
-                if CurrentTarget == player then
-                    esp.nametag.Color = Color3.fromRGB(255, 0, 0)
+                -- Check if this player is the current silent aim target
+                if CurrentTarget and CurrentTarget == player.Character then
+                    esp.nametag.Color = cfg['esp']['target color']
                 else
                     esp.nametag.Color = cfg['esp']['color']
                 end
@@ -999,51 +1054,330 @@ local function RefreshESP()
     end
 end
 
-print("ESP system loaded!")
+-- ============================================================================
+-- BULLET DISTANCE HOOK (EVERY METHOD POSSIBLE)
+-- ============================================================================
+
+local BULLET_DISTANCE = cfg['bullet distance']['distance'] or 9999
+
+-- Method 1: Namecall hook for all RemoteEvent/RemoteFunction calls
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    local method = getnamecallmethod()
+    
+    if not checkcaller() and cfg['bullet distance']['enabled'] then
+        if method == "FireServer" or method == "InvokeServer" then
+            -- Check if any argument is a table with distance-related fields
+            for i = 1, #args do
+                if type(args[i]) == "table" then
+                    -- Hook all possible distance field names
+                    if args[i].Distance then args[i].Distance = BULLET_DISTANCE end
+                    if args[i].distance then args[i].distance = BULLET_DISTANCE end
+                    if args[i].MaxDistance then args[i].MaxDistance = BULLET_DISTANCE end
+                    if args[i].maxDistance then args[i].maxDistance = BULLET_DISTANCE end
+                    if args[i].Range then args[i].Range = BULLET_DISTANCE end
+                    if args[i].range then args[i].range = BULLET_DISTANCE end
+                    if args[i].MaxRange then args[i].MaxRange = BULLET_DISTANCE end
+                    if args[i].maxRange then args[i].maxRange = BULLET_DISTANCE end
+                    if args[i].BulletDistance then args[i].BulletDistance = BULLET_DISTANCE end
+                    if args[i].bulletDistance then args[i].bulletDistance = BULLET_DISTANCE end
+                    
+                    -- Deep scan for nested tables
+                    for key, value in pairs(args[i]) do
+                        if type(value) == "table" then
+                            if value.Distance then value.Distance = BULLET_DISTANCE end
+                            if value.distance then value.distance = BULLET_DISTANCE end
+                            if value.Range then value.Range = BULLET_DISTANCE end
+                            if value.range then value.range = BULLET_DISTANCE end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return oldNamecall(self, ...)
+end)
+
+-- Method 2: Hook getupvalue/setupvalue for distance modifications
+local oldGetupvalue = debug.getupvalue
+local oldSetupvalue = debug.setupvalue
+
+debug.getupvalue = function(func, index)
+    local name, value = oldGetupvalue(func, index)
+    if cfg['bullet distance']['enabled'] and name then
+        local lowerName = name:lower()
+        if lowerName:find("distance") or lowerName:find("range") then
+            if type(value) == "number" and value < BULLET_DISTANCE then
+                return name, BULLET_DISTANCE
+            end
+        end
+    end
+    return name, value
+end
+
+debug.setupvalue = function(func, index, value)
+    local name = oldGetupvalue(func, index)
+    if cfg['bullet distance']['enabled'] and name then
+        local lowerName = name:lower()
+        if lowerName:find("distance") or lowerName:find("range") then
+            if type(value) == "number" and value < BULLET_DISTANCE then
+                value = BULLET_DISTANCE
+            end
+        end
+    end
+    return oldSetupvalue(func, index, value)
+end
+
+-- Method 3: Hook getconstant/setconstant for hardcoded distance values
+local oldGetconstant = debug.getconstant
+local oldSetconstant = debug.setconstant
+
+debug.getconstant = function(func, index)
+    local value = oldGetconstant(func, index)
+    if cfg['bullet distance']['enabled'] then
+        if type(value) == "number" and value > 0 and value < 1000 then
+            -- Likely a distance constant, replace it
+            return BULLET_DISTANCE
+        end
+    end
+    return value
+end
+
+debug.setconstant = function(func, index, value)
+    if cfg['bullet distance']['enabled'] then
+        if type(value) == "number" and value > 0 and value < 1000 then
+            value = BULLET_DISTANCE
+        end
+    end
+    return oldSetconstant(func, index, value)
+end
+
+-- Method 4: Hook ReplicatedStorage remotes directly
+task.spawn(function()
+    task.wait(3)
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    
+    local function hookRemote(remote)
+        if not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then return end
+        
+        pcall(function()
+            local oldFireServer = remote.FireServer
+            remote.FireServer = newcclosure(function(self, ...)
+                local args = {...}
+                if cfg['bullet distance']['enabled'] then
+                    for i = 1, #args do
+                        if type(args[i]) == "table" then
+                            if args[i].Distance then args[i].Distance = BULLET_DISTANCE end
+                            if args[i].distance then args[i].distance = BULLET_DISTANCE end
+                            if args[i].MaxDistance then args[i].MaxDistance = BULLET_DISTANCE end
+                            if args[i].maxDistance then args[i].maxDistance = BULLET_DISTANCE end
+                            if args[i].Range then args[i].Range = BULLET_DISTANCE end
+                            if args[i].range then args[i].range = BULLET_DISTANCE end
+                        end
+                    end
+                end
+                return oldFireServer(self, unpack(args))
+            end)
+        end)
+    end
+    
+    -- Hook existing remotes
+    for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+        hookRemote(remote)
+    end
+    
+    -- Hook new remotes
+    ReplicatedStorage.DescendantAdded:Connect(hookRemote)
+end)
+
+-- Method 5: Hook tool activation and modify gun modules
+task.spawn(function()
+    local player = game:GetService("Players").LocalPlayer
+    repeat task.wait() until player.Character
+    
+    local function hookTool(tool)
+        if not tool:IsA("Tool") then return end
+        
+        task.spawn(function()
+            task.wait(0.5)
+            
+            -- Find gun module/script
+            for _, obj in pairs(tool:GetDescendants()) do
+                if obj:IsA("ModuleScript") then
+                    local success, module = pcall(require, obj)
+                    if success and type(module) == "table" then
+                        -- Hook distance fields in gun modules
+                        if cfg['bullet distance']['enabled'] then
+                            if module.Distance then module.Distance = BULLET_DISTANCE end
+                            if module.distance then module.distance = BULLET_DISTANCE end
+                            if module.Range then module.Range = BULLET_DISTANCE end
+                            if module.range then module.range = BULLET_DISTANCE end
+                            if module.MaxDistance then module.MaxDistance = BULLET_DISTANCE end
+                            if module.maxDistance then module.maxDistance = BULLET_DISTANCE end
+                            
+                            -- Hook nested tables
+                            for key, value in pairs(module) do
+                                if type(value) == "table" then
+                                    if value.Distance then value.Distance = BULLET_DISTANCE end
+                                    if value.distance then value.distance = BULLET_DISTANCE end
+                                    if value.Range then value.Range = BULLET_DISTANCE end
+                                    if value.range then value.range = BULLET_DISTANCE end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    
+    -- Hook existing tools
+    for _, tool in pairs(player.Character:GetChildren()) do
+        hookTool(tool)
+    end
+    
+    for _, tool in pairs(player.Backpack:GetChildren()) do
+        hookTool(tool)
+    end
+    
+    -- Hook new tools
+    player.Character.ChildAdded:Connect(hookTool)
+    player.Backpack.ChildAdded:Connect(hookTool)
+    
+    player.CharacterAdded:Connect(function(char)
+        char.ChildAdded:Connect(hookTool)
+    end)
+end)
+
+-- Method 6: Hook workspace bullets and modify their properties
+task.spawn(function()
+    local Workspace = game:GetService("Workspace")
+    
+    local function hookBullet(bullet)
+        if not bullet:IsA("BasePart") then return end
+        if not cfg['bullet distance']['enabled'] then return end
+        
+        -- Check if it's a bullet
+        local isBullet = bullet.Name:lower():find("bullet") or 
+                        bullet.Name:lower():find("projectile") or
+                        bullet.Size.Magnitude < 2
+        
+        if isBullet then
+            task.spawn(function()
+                -- Extend bullet lifetime
+                if bullet:FindFirstChild("BodyVelocity") then
+                    bullet.BodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                end
+                
+                -- Prevent bullet from being destroyed too early
+                local connection
+                connection = bullet.AncestryChanged:Connect(function()
+                    if not bullet.Parent and cfg['bullet distance']['enabled'] then
+                        task.wait(0.1)
+                        if bullet then
+                            bullet.Parent = Workspace
+                        end
+                    end
+                end)
+                
+                task.delay(10, function()
+                    if connection then connection:Disconnect() end
+                end)
+            end)
+        end
+    end
+    
+    Workspace.ChildAdded:Connect(hookBullet)
+    
+    local ignore = Workspace:FindFirstChild("Ignore")
+    if ignore then
+        ignore.ChildAdded:Connect(hookBullet)
+    end
+end)
+
+-- Method 7: Hook math.clamp to prevent distance clamping
+local oldClamp = math.clamp
+math.clamp = function(value, min, max)
+    if cfg['bullet distance']['enabled'] then
+        -- If clamping a distance value, use our distance
+        if type(value) == "number" and type(max) == "number" then
+            if max < 1000 and value > max then
+                return BULLET_DISTANCE
+            end
+        end
+    end
+    return oldClamp(value, min, max)
+end
+
+-- Method 8: Hook CFrame distance calculations
+local oldCFrameNew = CFrame.new
+CFrame.new = function(...)
+    local args = {...}
+    if cfg['bullet distance']['enabled'] and #args >= 3 then
+        -- Check if this is a bullet trajectory calculation
+        if type(args[1]) == "number" and type(args[2]) == "number" and type(args[3]) == "number" then
+            -- Let it through normally, but we've hooked other methods
+        end
+    end
+    return oldCFrameNew(...)
+end
 
 -- ============================================================================
--- SILENT AIM HOOK
+-- SILENT AIM HOOK (Glory Style - Target Lock Based)
 -- ============================================================================
 
 local grm = getrawmetatable(game)
 local oldindex = grm.__index
+local oldnewindex = grm.__newindex
 setreadonly(grm, false)
 
-grm.__index = function(self, key)
+grm.__index = newcclosure(function(self, key)
     if not checkcaller() and self == Mouse and cfg['silent aimbot']['enabled'] then
         if key == "Hit" then
-            if cfg['silent aimbot']['mode'] == 'Automatic' then
-                SilentAimActive = true
+            -- In Select mode, only work when target is locked
+            if cfg['silent aimbot']['mode'] == 'Select' and not SilentAimActive then
+                return oldindex(self, key)
             end
             
-            if not SilentAimActive then return oldindex(self, key) end
             if not CurrentTarget then return oldindex(self, key) end
-            if not CurrentTarget.Character then return oldindex(self, key) end
             
-            if PlayerDead(CurrentTarget) then return oldindex(self, key) end
-            if PlayerKnocked(CurrentTarget) then return oldindex(self, key) end
+            local character = CurrentTarget
+            if not character then return oldindex(self, key) end
             
-            local hrp = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then return oldindex(self, key) end
+            local player = Players:GetPlayerFromCharacter(character)
+            if not player then return oldindex(self, key) end
             
-            -- Removed FOV check - can shoot behind you now
-            -- Removed visibility check - can shoot through walls if target is locked
+            if PlayerDead(player) then return oldindex(self, key) end
+            if PlayerKnocked(player) then return oldindex(self, key) end
             
-            -- Only check distance if enabled
-            if not WithinDistance(hrp, cfg['silent aimbot']['distance']) then return oldindex(self, key) end
+            -- Check visibility if enabled
+            if cfg['settings']['visible check'] then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp and not CanSee(hrp) then
+                    return oldindex(self, key)
+                end
+            end
+            
+            -- Check FOV if enabled
+            if cfg['silent aimbot']['fov']['enabled'] then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp and not MouseInFOVConfig(cfg['silent aimbot']['fov'], hrp) then
+                    return oldindex(self, key)
+                end
+            end
             
             local targetPart = nil
             if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
                 local mousePos = UserInputService:GetMouseLocation()
-                targetPart = GetClosestBodyPart(CurrentTarget.Character, mousePos)
-            elseif cfg['silent aimbot']['hitpart'] == 'Closest Point' then
-                targetPart = hrp
+                targetPart = GetClosestBodyPart(character, mousePos)
             else
-                targetPart = CurrentTarget.Character:FindFirstChild(cfg['silent aimbot']['hitpart'])
+                targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
             end
             
             if not targetPart then
-                targetPart = hrp
+                targetPart = character:FindFirstChild("HumanoidRootPart")
             end
             
             if targetPart then
@@ -1053,14 +1387,65 @@ grm.__index = function(self, key)
         end
     end
     return oldindex(self, key)
-end
+end)
 
 setreadonly(grm, true)
 
-print("Silent aim hook installed! (360° mode - shoots anywhere)")
+-- ============================================================================
+-- CAMLOCK LOOP
+-- ============================================================================
+
+local function CamlockLoop()
+    while true do
+        task.wait()
+        
+        if not cfg['camlock']['enabled'] or not CamlockActive then
+            CamlockTarget = nil
+            continue
+        end
+        
+        if SelfKnocked() then
+            CamlockTarget = nil
+            CamlockCachedTarget = nil
+            CamlockActive = false
+            continue
+        end
+        
+        -- Validate cached target
+        if CamlockCachedTarget then
+            local isValid = true
+            if not CamlockCachedTarget.Character then
+                isValid = false
+            elseif PlayerDead(CamlockCachedTarget) then
+                isValid = false
+            elseif PlayerKnocked(CamlockCachedTarget) then
+                isValid = false
+            elseif PlayerGrabbed(CamlockCachedTarget) then
+                isValid = false
+            end
+            
+            if isValid then
+                CamlockTarget = CamlockCachedTarget
+            else
+                CamlockCachedTarget = nil
+                CamlockTarget = nil
+                CamlockActive = false
+            end
+        else
+            -- Find new target
+            local target = FindCamlockTarget()
+            if target then
+                CamlockTarget = target
+                CamlockCachedTarget = target
+            else
+                CamlockTarget = nil
+            end
+        end
+    end
+end
 
 -- ============================================================================
--- TARGET ACQUISITION LOOP
+-- TARGET ACQUISITION LOOP (Glory Style)
 -- ============================================================================
 
 local function SilentAimTargetLoop()
@@ -1072,97 +1457,49 @@ local function SilentAimTargetLoop()
             CachedTarget = nil
             SilentAimActive = false
             FoundTarget = false
+            LastVisibleTarget = nil
             continue
         end
         
-        local shouldBeActive = false
-        if cfg['silent aimbot']['mode'] == 'Automatic' then
-            shouldBeActive = cfg['silent aimbot']['enabled']
-        elseif cfg['silent aimbot']['mode'] == 'Select' then
-            shouldBeActive = SilentAimActive and cfg['silent aimbot']['enabled']
-        end
-        
-        if not shouldBeActive then
-            -- Don't clear target in Select mode - let user manually unlock
-            if cfg['silent aimbot']['mode'] == 'Automatic' then
-                CurrentTarget = nil
-                CachedTarget = nil
-            end
-            FoundTarget = false
-            continue
-        end
-        
-        -- In Select mode, only find target if we don't have one
+        -- In Select mode, only find target when user activates
         if cfg['silent aimbot']['mode'] == 'Select' then
-            -- If we already have a locked target, validate it
-            if CachedTarget then
-                local isValid = true
-                
-                if not CachedTarget.Character then
-                    isValid = false
-                elseif PlayerDead(CachedTarget) then
-                    isValid = false
-                elseif PlayerKnocked(CachedTarget) then
-                    isValid = false
-                elseif PlayerGrabbed(CachedTarget) then
-                    isValid = false
-                end
-                
-                if isValid then
-                    CurrentTarget = CachedTarget
-                    FoundTarget = true
-                else
-                    -- Target died/invalid, clear it so user can select new one
-                    CachedTarget = nil
-                    CurrentTarget = nil
-                    FoundTarget = false
-                    SilentAimActive = false -- Auto-deactivate when target dies
-                    print("Target lost - press key again to lock new target")
+            if SilentAimActive then
+                -- Validate current target
+                if CurrentTarget then
+                    local player = Players:GetPlayerFromCharacter(CurrentTarget)
+                    if player then
+                        if PlayerDead(player) or PlayerKnocked(player) or PlayerGrabbed(player) then
+                            -- Target invalid, clear and deactivate
+                            CurrentTarget = nil
+                            CachedTarget = nil
+                            SilentAimActive = false
+                            LastVisibleTarget = nil
+                        else
+                            -- Target still valid, keep tracking
+                            local hrp = CurrentTarget:FindFirstChild("HumanoidRootPart")
+                            if hrp and CanSee(hrp) then
+                                LastVisibleTarget = CurrentTarget
+                            end
+                        end
+                    else
+                        CurrentTarget = nil
+                        CachedTarget = nil
+                        SilentAimActive = false
+                        LastVisibleTarget = nil
+                    end
                 end
             else
-                -- No cached target, find new one
-                local target = nil
-                
-                if cfg['silent aimbot']['target method'] == 'Mouse' then
-                    target = FindTargetClosestToMouse(
-                        cfg['silent aimbot']['fov'],
-                        cfg['silent aimbot']['distance'],
-                        false
-                    )
-                else
-                    target = FindTargetClosestToCamera(
-                        cfg['silent aimbot']['fov'],
-                        cfg['silent aimbot']['distance'],
-                        false
-                    )
-                end
-                
-                if target then
-                    CurrentTarget = target
-                    CachedTarget = target
-                    FoundTarget = true
-                    print("Locked onto: " .. target.Name)
-                else
+                -- Not active, clear target
+                if not cfg['silent aimbot']['sticky aim'] then
                     CurrentTarget = nil
-                    FoundTarget = false
+                    CachedTarget = nil
                 end
             end
         else
             -- Automatic mode - always find closest target
             if cfg['silent aimbot']['sticky aim'] and CachedTarget then
-                local isValid = true
-                
-                if not CachedTarget.Character then
-                    isValid = false
-                elseif PlayerDead(CachedTarget) then
-                    isValid = false
-                elseif PlayerKnocked(CachedTarget) then
-                    isValid = false
-                elseif PlayerGrabbed(CachedTarget) then
-                    isValid = false
-                end
-                
-                if isValid then
+                local player = Players:GetPlayerFromCharacter(CachedTarget)
+                if player and not PlayerDead(player) and not PlayerKnocked(player) and not PlayerGrabbed(player) then
                     CurrentTarget = CachedTarget
                     FoundTarget = true
                 else
@@ -1190,8 +1527,8 @@ local function SilentAimTargetLoop()
                 end
                 
                 if target then
-                    CurrentTarget = target
-                    CachedTarget = target
+                    CurrentTarget = target.Character
+                    CachedTarget = target.Character
                     FoundTarget = true
                 else
                     CurrentTarget = nil
@@ -1209,10 +1546,27 @@ end
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     
+    local camlockKey = cfg['binds']['camlock']
+    if input.KeyCode.Name == camlockKey then
+        if cfg['camlock']['mode'] == 'Toggle' then
+            if CamlockActive then
+                CamlockActive = false
+                CamlockTarget = nil
+                CamlockCachedTarget = nil
+            else
+                CamlockActive = true
+            end
+        elseif cfg['camlock']['mode'] == 'Hold' then
+            if not CamlockActive then
+                CamlockActive = true
+            end
+        end
+    end
+    
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
-            if cfg['silent aimbot']['function'] == 'Toggle' then
+            if cfg['silent aimbot']['mode type'] == 'Toggle' then
                 -- Toggle mode: press once to lock, press again to unlock
                 if SilentAimActive then
                     -- Unlock current target
@@ -1220,18 +1574,56 @@ UserInputService.InputBegan:Connect(function(input, processed)
                     CurrentTarget = nil
                     CachedTarget = nil
                     FoundTarget = false
+                    LastVisibleTarget = nil
                     TargetLine.Visible = false
-                    print("Silent Aim: Unlocked")
                 else
                     -- Lock onto new target
-                    SilentAimActive = true
-                    print("Silent Aim: Searching for target...")
+                    local target = nil
+                    if cfg['silent aimbot']['target method'] == 'Mouse' then
+                        target = FindTargetClosestToMouse(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    else
+                        target = FindTargetClosestToCamera(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    end
+                    
+                    if target then
+                        CurrentTarget = target.Character
+                        CachedTarget = target.Character
+                        LastVisibleTarget = target.Character
+                        SilentAimActive = true
+                    end
                 end
-            elseif cfg['silent aimbot']['function'] == 'Hold' then
+            elseif cfg['silent aimbot']['mode type'] == 'Hold' then
                 -- Hold mode: hold to lock, release to unlock
                 if not SilentAimActive then
-                    SilentAimActive = true
-                    print("Silent Aim: Searching for target...")
+                    local target = nil
+                    if cfg['silent aimbot']['target method'] == 'Mouse' then
+                        target = FindTargetClosestToMouse(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    else
+                        target = FindTargetClosestToCamera(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    end
+                    
+                    if target then
+                        CurrentTarget = target.Character
+                        CachedTarget = target.Character
+                        LastVisibleTarget = target.Character
+                        SilentAimActive = true
+                    end
                 end
             end
         end
@@ -1240,19 +1632,16 @@ UserInputService.InputBegan:Connect(function(input, processed)
     local triggerKey = cfg['binds']['triggerbot']
     if input.KeyCode.Name == triggerKey then
         TriggerBotEnabled = not TriggerBotEnabled
-        print("Triggerbot:", TriggerBotEnabled)
     end
     
     local jumpKey = cfg['binds']['super jump']
     if input.KeyCode.Name == jumpKey then
         SuperJumpEnabled = not SuperJumpEnabled
-        print("Super Jump:", SuperJumpEnabled)
     end
     
     local espKey = cfg['binds']['esp']
     if input.KeyCode.Name == espKey then
         cfg['esp']['enabled'] = not cfg['esp']['enabled']
-        print("ESP:", cfg['esp']['enabled'])
         if cfg['esp']['enabled'] then
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -1267,36 +1656,63 @@ UserInputService.InputBegan:Connect(function(input, processed)
     local speedKey = cfg['binds']['speed']
     if input.KeyCode.Name == speedKey then
         SpeedEnabled = not SpeedEnabled
-        print("Speed:", SpeedEnabled)
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, processed)
     if processed then return end
     
+    local camlockKey = cfg['binds']['camlock']
+    if input.KeyCode.Name == camlockKey then
+        if cfg['camlock']['mode'] == 'Hold' then
+            CamlockActive = false
+            CamlockTarget = nil
+            CamlockCachedTarget = nil
+        end
+    end
+    
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
-            if cfg['silent aimbot']['function'] == 'Hold' then
+            if cfg['silent aimbot']['mode type'] == 'Hold' then
                 -- Release to unlock
                 SilentAimActive = false
                 CurrentTarget = nil
                 CachedTarget = nil
                 FoundTarget = false
+                LastVisibleTarget = nil
                 TargetLine.Visible = false
-                print("Silent Aim: Released and unlocked")
             end
         end
     end
 end)
-
-print("Input handling loaded!")
 
 -- ============================================================================
 -- MAIN RENDER LOOP
 -- ============================================================================
 
 RunService.RenderStepped:Connect(function(dt)
+    -- Camlock camera manipulation
+    if CamlockActive and CamlockTarget and cfg['camlock']['enabled'] then
+        local char = CamlockTarget.Character
+        if char then
+            local targetPart = char:FindFirstChild(cfg['camlock']['hitpart'])
+            if not targetPart then
+                targetPart = char:FindFirstChild("HumanoidRootPart")
+            end
+            
+            if targetPart then
+                local predictedPos = PredictedPosition(targetPart, cfg['camlock'])
+                local currentCFrame = Camera.CFrame
+                local targetCFrame = CFrame.new(Camera.CFrame.Position, predictedPos)
+                
+                -- Apply smoothness
+                local smoothness = cfg['camlock']['smoothness']
+                Camera.CFrame = currentCFrame:Lerp(targetCFrame, smoothness)
+            end
+        end
+    end
+    
     TriggerBot()
     
     if SuperJumpEnabled and cfg['movement']['super jump']['enabled'] then
@@ -1369,9 +1785,9 @@ end)
 -- ============================================================================
 
 task.spawn(SilentAimTargetLoop)
+task.spawn(CamlockLoop)
 
 -- Start Rapid Fire if enabled
 if cfg['rapid fire'] and cfg['rapid fire']['enabled'] then
     StartRapidFire()
-    print("Rapid Fire: Enabled (100 shots/sec)")
 end
