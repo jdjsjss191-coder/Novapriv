@@ -20,27 +20,41 @@ local Mouse = LocalPlayer:GetMouse()
 local Camera = Workspace.CurrentCamera
 
 -- ============================================================================
--- SNIPER DB (NO SPREAD) HOOK
+-- SPREAD CONTROL HOOK
 -- ============================================================================
 
-local SniperDBHook
-SniperDBHook = hookfunction(math.random, function(...)
+local oldRandom
+oldRandom = hookfunction(math.random, function(...)
     local args = {...}
     if checkcaller() then
-        return SniperDBHook(...)
+        return oldRandom(...)
     end
     
     -- Detect bullet spread calls
-    if (#args == 0) or 
-       (args[1] == -0.05 and args[2] == 0.05) or 
-       (args[1] == -0.1) or 
-       (args[1] == -0.05) then
-        if cfg['sniper db']['enabled'] then
-            return SniperDBHook(...) * (cfg['sniper db']['spread amount'] / 100)
+    if (#args == 0) or (args[1] == -0.05 and args[2] == 0.05) or (args[1] == -0.1) or (args[1] == -0.05) then
+        if cfg['spread']['enabled'] then
+            if cfg['spread']['specific weapons']['enabled'] then
+                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                if tool then
+                    local weaponName = tool.Name
+                    local foundWeapon = false
+                    for _, weapon in pairs(cfg['spread']['specific weapons']['weapons']) do
+                        if weaponName == weapon then
+                            foundWeapon = true
+                            break
+                        end
+                    end
+                    if foundWeapon then
+                        return oldRandom(...) * (cfg['spread']['amount'] / 100)
+                    end
+                end
+            else
+                return oldRandom(...) * (cfg['spread']['amount'] / 100)
+            end
         end
     end
     
-    return SniperDBHook(...)
+    return oldRandom(...)
 end)
 
 -- ============================================================================
@@ -178,6 +192,7 @@ local SuperJumpEnabled = false
 local LastTriggerClick = 0
 local LastTargetScan = 0
 local ScanRate = 1 / 60
+local LastVisibleTarget = nil
 
 -- Camlock State
 local CamlockActive = false
@@ -1066,7 +1081,7 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
 end)
 
 -- ============================================================================
--- SILENT AIM HOOK
+-- SILENT AIM HOOK (Glory Style - Target Lock Based)
 -- ============================================================================
 
 local grm = getrawmetatable(game)
@@ -1076,38 +1091,48 @@ setreadonly(grm, false)
 grm.__index = function(self, key)
     if not checkcaller() and self == Mouse and cfg['silent aimbot']['enabled'] then
         if key == "Hit" then
-            if cfg['silent aimbot']['mode'] == 'Automatic' then
-                SilentAimActive = true
+            -- In Select mode, only work when target is locked
+            if cfg['silent aimbot']['mode'] == 'Select' and not SilentAimActive then
+                return oldindex(self, key)
             end
             
-            if not SilentAimActive then return oldindex(self, key) end
             if not CurrentTarget then return oldindex(self, key) end
-            if not CurrentTarget.Character then return oldindex(self, key) end
             
-            if PlayerDead(CurrentTarget) then return oldindex(self, key) end
-            if PlayerKnocked(CurrentTarget) then return oldindex(self, key) end
+            local character = CurrentTarget
+            if not character then return oldindex(self, key) end
             
-            local hrp = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then return oldindex(self, key) end
+            local player = Players:GetPlayerFromCharacter(character)
+            if not player then return oldindex(self, key) end
             
-            -- Removed FOV check - can shoot behind you now
-            -- Removed visibility check - can shoot through walls if target is locked
+            if PlayerDead(player) then return oldindex(self, key) end
+            if PlayerKnocked(player) then return oldindex(self, key) end
             
-            -- Only check distance if enabled
-            if not WithinDistance(hrp, cfg['silent aimbot']['distance']) then return oldindex(self, key) end
+            -- Check visibility if enabled
+            if cfg['settings']['visible check'] then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp and not CanSee(hrp) then
+                    return oldindex(self, key)
+                end
+            end
+            
+            -- Check FOV if enabled
+            if cfg['silent aimbot']['fov']['enabled'] then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp and not MouseInFOVConfig(cfg['silent aimbot']['fov'], hrp) then
+                    return oldindex(self, key)
+                end
+            end
             
             local targetPart = nil
             if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
                 local mousePos = UserInputService:GetMouseLocation()
-                targetPart = GetClosestBodyPart(CurrentTarget.Character, mousePos)
-            elseif cfg['silent aimbot']['hitpart'] == 'Closest Point' then
-                targetPart = hrp
+                targetPart = GetClosestBodyPart(character, mousePos)
             else
-                targetPart = CurrentTarget.Character:FindFirstChild(cfg['silent aimbot']['hitpart'])
+                targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
             end
             
             if not targetPart then
-                targetPart = hrp
+                targetPart = character:FindFirstChild("HumanoidRootPart")
             end
             
             if targetPart then
@@ -1175,7 +1200,7 @@ local function CamlockLoop()
 end
 
 -- ============================================================================
--- TARGET ACQUISITION LOOP
+-- TARGET ACQUISITION LOOP (Glory Style)
 -- ============================================================================
 
 local function SilentAimTargetLoop()
@@ -1187,95 +1212,49 @@ local function SilentAimTargetLoop()
             CachedTarget = nil
             SilentAimActive = false
             FoundTarget = false
+            LastVisibleTarget = nil
             continue
         end
         
-        local shouldBeActive = false
-        if cfg['silent aimbot']['mode'] == 'Automatic' then
-            shouldBeActive = cfg['silent aimbot']['enabled']
-        elseif cfg['silent aimbot']['mode'] == 'Select' then
-            shouldBeActive = SilentAimActive and cfg['silent aimbot']['enabled']
-        end
-        
-        if not shouldBeActive then
-            -- Don't clear target in Select mode - let user manually unlock
-            if cfg['silent aimbot']['mode'] == 'Automatic' then
-                CurrentTarget = nil
-                CachedTarget = nil
-            end
-            FoundTarget = false
-            continue
-        end
-        
-        -- In Select mode, only find target if we don't have one
+        -- In Select mode, only find target when user activates
         if cfg['silent aimbot']['mode'] == 'Select' then
-            -- If we already have a locked target, validate it
-            if CachedTarget then
-                local isValid = true
-                
-                if not CachedTarget.Character then
-                    isValid = false
-                elseif PlayerDead(CachedTarget) then
-                    isValid = false
-                elseif PlayerKnocked(CachedTarget) then
-                    isValid = false
-                elseif PlayerGrabbed(CachedTarget) then
-                    isValid = false
-                end
-                
-                if isValid then
-                    CurrentTarget = CachedTarget
-                    FoundTarget = true
-                else
-                    -- Target died/invalid, clear it so user can select new one
-                    CachedTarget = nil
-                    CurrentTarget = nil
-                    FoundTarget = false
-                    SilentAimActive = false -- Auto-deactivate when target dies
+            if SilentAimActive then
+                -- Validate current target
+                if CurrentTarget then
+                    local player = Players:GetPlayerFromCharacter(CurrentTarget)
+                    if player then
+                        if PlayerDead(player) or PlayerKnocked(player) or PlayerGrabbed(player) then
+                            -- Target invalid, clear and deactivate
+                            CurrentTarget = nil
+                            CachedTarget = nil
+                            SilentAimActive = false
+                            LastVisibleTarget = nil
+                        else
+                            -- Target still valid, keep tracking
+                            local hrp = CurrentTarget:FindFirstChild("HumanoidRootPart")
+                            if hrp and CanSee(hrp) then
+                                LastVisibleTarget = CurrentTarget
+                            end
+                        end
+                    else
+                        CurrentTarget = nil
+                        CachedTarget = nil
+                        SilentAimActive = false
+                        LastVisibleTarget = nil
+                    end
                 end
             else
-                -- No cached target, find new one
-                local target = nil
-                
-                if cfg['silent aimbot']['target method'] == 'Mouse' then
-                    target = FindTargetClosestToMouse(
-                        cfg['silent aimbot']['fov'],
-                        cfg['silent aimbot']['distance'],
-                        false
-                    )
-                else
-                    target = FindTargetClosestToCamera(
-                        cfg['silent aimbot']['fov'],
-                        cfg['silent aimbot']['distance'],
-                        false
-                    )
-                end
-                
-                if target then
-                    CurrentTarget = target
-                    CachedTarget = target
-                    FoundTarget = true
-                else
+                -- Not active, clear target
+                if not cfg['silent aimbot']['sticky aim'] then
                     CurrentTarget = nil
-                    FoundTarget = false
+                    CachedTarget = nil
                 end
             end
         else
             -- Automatic mode - always find closest target
             if cfg['silent aimbot']['sticky aim'] and CachedTarget then
-                local isValid = true
-                
-                if not CachedTarget.Character then
-                    isValid = false
-                elseif PlayerDead(CachedTarget) then
-                    isValid = false
-                elseif PlayerKnocked(CachedTarget) then
-                    isValid = false
-                elseif PlayerGrabbed(CachedTarget) then
-                    isValid = false
-                end
-                
-                if isValid then
+                local player = Players:GetPlayerFromCharacter(CachedTarget)
+                if player and not PlayerDead(player) and not PlayerKnocked(player) and not PlayerGrabbed(player) then
                     CurrentTarget = CachedTarget
                     FoundTarget = true
                 else
@@ -1303,8 +1282,8 @@ local function SilentAimTargetLoop()
                 end
                 
                 if target then
-                    CurrentTarget = target
-                    CachedTarget = target
+                    CurrentTarget = target.Character
+                    CachedTarget = target.Character
                     FoundTarget = true
                 else
                     CurrentTarget = nil
@@ -1350,15 +1329,56 @@ UserInputService.InputBegan:Connect(function(input, processed)
                     CurrentTarget = nil
                     CachedTarget = nil
                     FoundTarget = false
+                    LastVisibleTarget = nil
                     TargetLine.Visible = false
                 else
                     -- Lock onto new target
-                    SilentAimActive = true
+                    local target = nil
+                    if cfg['silent aimbot']['target method'] == 'Mouse' then
+                        target = FindTargetClosestToMouse(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    else
+                        target = FindTargetClosestToCamera(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    end
+                    
+                    if target then
+                        CurrentTarget = target.Character
+                        CachedTarget = target.Character
+                        LastVisibleTarget = target.Character
+                        SilentAimActive = true
+                    end
                 end
             elseif cfg['silent aimbot']['mode type'] == 'Hold' then
                 -- Hold mode: hold to lock, release to unlock
                 if not SilentAimActive then
-                    SilentAimActive = true
+                    local target = nil
+                    if cfg['silent aimbot']['target method'] == 'Mouse' then
+                        target = FindTargetClosestToMouse(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    else
+                        target = FindTargetClosestToCamera(
+                            cfg['silent aimbot']['fov'],
+                            cfg['silent aimbot']['distance'],
+                            false
+                        )
+                    end
+                    
+                    if target then
+                        CurrentTarget = target.Character
+                        CachedTarget = target.Character
+                        LastVisibleTarget = target.Character
+                        SilentAimActive = true
+                    end
                 end
             end
         end
@@ -1415,6 +1435,7 @@ UserInputService.InputEnded:Connect(function(input, processed)
                 CurrentTarget = nil
                 CachedTarget = nil
                 FoundTarget = false
+                LastVisibleTarget = nil
                 TargetLine.Visible = false
             end
         end
