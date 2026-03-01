@@ -8,6 +8,59 @@ repeat task.wait() until shared.Nova
 local cfg = shared.Nova
 
 -- ============================================================================
+-- BULLET DISTANCE MODIFIER
+-- ============================================================================
+
+local BulletDistanceHook
+local OriginalRaycast = workspace.Raycast
+
+-- Hook workspace Raycast for bullet distance
+BulletDistanceHook = hookfunction(workspace.Raycast, function(self, origin, direction, params)
+    if not checkcaller() and cfg['bullet distance']['enabled'] then
+        local multiplier = cfg['bullet distance']['multiplier']
+        -- Extend the direction vector by the multiplier
+        direction = direction * multiplier
+    end
+    return BulletDistanceHook(self, origin, direction, params)
+end)
+
+-- Hook individual part Raycast methods
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+setreadonly(mt, false)
+
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    if not checkcaller() and cfg['bullet distance']['enabled'] then
+        if method == "Raycast" and typeof(self) == "Instance" then
+            -- Extend raycast distance
+            if args[2] then -- direction parameter
+                local multiplier = cfg['bullet distance']['multiplier']
+                args[2] = args[2] * multiplier
+            end
+            return oldNamecall(self, unpack(args))
+        end
+        
+        -- Hook FindPartOnRay for older bullet systems
+        if method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" then
+            if args[1] and typeof(args[1]) == "Ray" then
+                local multiplier = cfg['bullet distance']['multiplier']
+                local ray = args[1]
+                -- Extend the ray direction
+                args[1] = Ray.new(ray.Origin, ray.Direction * multiplier)
+            end
+            return oldNamecall(self, unpack(args))
+        end
+    end
+    
+    return oldNamecall(self, ...)
+end)
+
+setreadonly(mt, true)
+
+-- ============================================================================
 -- SNIPER DB (NO SPREAD) HOOK
 -- ============================================================================
 
@@ -156,14 +209,6 @@ repeat task.wait() until LocalPlayer.Character
 local Mouse = LocalPlayer:GetMouse()
 local Camera = Workspace.CurrentCamera
 
--- Fix camera zoom spazzing when near objects/players
-Camera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-
--- Disable camera occlusion (prevents zoom spazzing near walls/players)
-pcall(function()
-    LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
-end)
-
 -- Performance Optimizations
 local math_sqrt = math.sqrt
 local math_huge = math.huge
@@ -188,6 +233,11 @@ local SuperJumpEnabled = false
 local LastTriggerClick = 0
 local LastTargetScan = 0
 local ScanRate = 1 / 60
+
+-- Camlock State
+local CamlockActive = false
+local CamlockTarget = nil
+local CamlockCachedTarget = nil
 
 -- Rapid Fire State
 local RapidFireActive = false
@@ -734,6 +784,51 @@ local function CalculateTargetPartPosition(target, config)
     return partpos
 end
 
+local function FindCamlockTarget()
+    if HoldingKnife() then return nil end
+    
+    local mousePos = UserInputService:GetMouseLocation()
+    local fovcfg = cfg['camlock']['fov']
+    local distcfg = cfg['camlock']['distance']
+    local fovSizeSquared = fovcfg and fovcfg['enabled'] and (fovcfg['size'] * fovcfg['size']) or math_huge
+    
+    local closestPlayer = nil
+    local closestDistSquared = math_huge
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not player.Character then continue end
+        if not IsValidAddress(player.Character) then continue end
+        
+        local head = player.Character:FindFirstChild("Head")
+        if not head then continue end
+        if IsSameTeam(player) then continue end
+        if PlayerDead(player) then continue end
+        if PlayerKnocked(player) then continue end
+        if PlayerGrabbed(player) then continue end
+        
+        local screenCoords, onScreen = Camera:WorldToViewportPoint(head.Position)
+        if not onScreen or screenCoords.Z <= 0 then continue end
+        
+        local screenPos2D = Vector2_new(screenCoords.X, screenCoords.Y)
+        local dx = mousePos.X - screenPos2D.X
+        local dy = mousePos.Y - screenPos2D.Y
+        local distSquared = dx * dx + dy * dy
+        
+        if fovcfg and fovcfg['enabled'] and distSquared > fovSizeSquared then continue end
+        
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and not WithinDistance(hrp, distcfg) then continue end
+        
+        if distSquared < closestDistSquared then
+            closestDistSquared = distSquared
+            closestPlayer = player
+        end
+    end
+    
+    return closestPlayer
+end
+
 -- ============================================================================
 -- FOV VISUALIZATION - DISABLED
 -- ============================================================================
@@ -1055,6 +1150,59 @@ end
 setreadonly(grm, true)
 
 -- ============================================================================
+-- CAMLOCK LOOP
+-- ============================================================================
+
+local function CamlockLoop()
+    while true do
+        task.wait()
+        
+        if not cfg['camlock']['enabled'] or not CamlockActive then
+            CamlockTarget = nil
+            continue
+        end
+        
+        if SelfKnocked() then
+            CamlockTarget = nil
+            CamlockCachedTarget = nil
+            CamlockActive = false
+            continue
+        end
+        
+        -- Validate cached target
+        if CamlockCachedTarget then
+            local isValid = true
+            if not CamlockCachedTarget.Character then
+                isValid = false
+            elseif PlayerDead(CamlockCachedTarget) then
+                isValid = false
+            elseif PlayerKnocked(CamlockCachedTarget) then
+                isValid = false
+            elseif PlayerGrabbed(CamlockCachedTarget) then
+                isValid = false
+            end
+            
+            if isValid then
+                CamlockTarget = CamlockCachedTarget
+            else
+                CamlockCachedTarget = nil
+                CamlockTarget = nil
+                CamlockActive = false
+            end
+        else
+            -- Find new target
+            local target = FindCamlockTarget()
+            if target then
+                CamlockTarget = target
+                CamlockCachedTarget = target
+            else
+                CamlockTarget = nil
+            end
+        end
+    end
+end
+
+-- ============================================================================
 -- TARGET ACQUISITION LOOP
 -- ============================================================================
 
@@ -1202,6 +1350,23 @@ end
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     
+    local camlockKey = cfg['binds']['camlock']
+    if input.KeyCode.Name == camlockKey then
+        if cfg['camlock']['mode'] == 'Toggle' then
+            if CamlockActive then
+                CamlockActive = false
+                CamlockTarget = nil
+                CamlockCachedTarget = nil
+            else
+                CamlockActive = true
+            end
+        elseif cfg['camlock']['mode'] == 'Hold' then
+            if not CamlockActive then
+                CamlockActive = true
+            end
+        end
+    end
+    
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
@@ -1260,6 +1425,15 @@ end)
 UserInputService.InputEnded:Connect(function(input, processed)
     if processed then return end
     
+    local camlockKey = cfg['binds']['camlock']
+    if input.KeyCode.Name == camlockKey then
+        if cfg['camlock']['mode'] == 'Hold' then
+            CamlockActive = false
+            CamlockTarget = nil
+            CamlockCachedTarget = nil
+        end
+    end
+    
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
@@ -1280,6 +1454,27 @@ end)
 -- ============================================================================
 
 RunService.RenderStepped:Connect(function(dt)
+    -- Camlock camera manipulation
+    if CamlockActive and CamlockTarget and cfg['camlock']['enabled'] then
+        local char = CamlockTarget.Character
+        if char then
+            local targetPart = char:FindFirstChild(cfg['camlock']['hitpart'])
+            if not targetPart then
+                targetPart = char:FindFirstChild("HumanoidRootPart")
+            end
+            
+            if targetPart then
+                local predictedPos = PredictedPosition(targetPart, cfg['camlock'])
+                local currentCFrame = Camera.CFrame
+                local targetCFrame = CFrame.new(Camera.CFrame.Position, predictedPos)
+                
+                -- Apply smoothness
+                local smoothness = cfg['camlock']['smoothness']
+                Camera.CFrame = currentCFrame:Lerp(targetCFrame, smoothness)
+            end
+        end
+    end
+    
     TriggerBot()
     
     if SuperJumpEnabled and cfg['movement']['super jump']['enabled'] then
@@ -1352,6 +1547,7 @@ end)
 -- ============================================================================
 
 task.spawn(SilentAimTargetLoop)
+task.spawn(CamlockLoop)
 
 -- Start Rapid Fire if enabled
 if cfg['rapid fire'] and cfg['rapid fire']['enabled'] then
