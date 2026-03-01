@@ -1039,6 +1039,33 @@ local function RefreshESP()
 end
 
 -- ============================================================================
+-- BULLET DISTANCE HOOK
+-- ============================================================================
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    local method = getnamecallmethod()
+    
+    if not checkcaller() then
+        -- Hook bullet distance for all weapons
+        if cfg['bullet distance']['enabled'] and method == "FireServer" then
+            if self.Name == "MainEvent" or self.Name == "MAINEVENT" or self.Name == "Remote" or self.Name == "Bullets" then
+                if typeof(args[1]) == "table" and args[1]["Distance"] then
+                    if cfg['bullet distance']['infinite'] then
+                        args[1]["Distance"] = 10000
+                    else
+                        args[1]["Distance"] = cfg['bullet distance']['custom distance']
+                    end
+                end
+            end
+        end
+    end
+    
+    return oldNamecall(self, ...)
+end)
+
+-- ============================================================================
 -- SILENT AIM HOOK
 -- ============================================================================
 
