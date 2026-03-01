@@ -984,7 +984,7 @@ local function RefreshESP()
                 esp.nametag.Text = text
                 
                 if CurrentTarget == player then
-                    esp.nametag.Color = Color3.fromRGB(255, 0, 0)
+                    esp.nametag.Color = cfg['esp']['target color'] or Color3.fromRGB(255, 0, 0)
                 else
                     esp.nametag.Color = cfg['esp']['color']
                 end
@@ -1012,7 +1012,7 @@ setreadonly(grm, false)
 grm.__index = function(self, key)
     if not checkcaller() and self == Mouse and cfg['silent aimbot']['enabled'] then
         if key == "Hit" then
-            if cfg['silent aimbot']['mode'] == 'Automatic' then
+            if cfg['targeting']['mode'] == 'Automatic' then
                 SilentAimActive = true
             end
             
@@ -1076,15 +1076,15 @@ local function SilentAimTargetLoop()
         end
         
         local shouldBeActive = false
-        if cfg['silent aimbot']['mode'] == 'Automatic' then
+        if cfg['targeting']['mode'] == 'Automatic' then
             shouldBeActive = cfg['silent aimbot']['enabled']
-        elseif cfg['silent aimbot']['mode'] == 'Select' then
+        elseif cfg['targeting']['mode'] == 'Select' then
             shouldBeActive = SilentAimActive and cfg['silent aimbot']['enabled']
         end
         
         if not shouldBeActive then
             -- Don't clear target in Select mode - let user manually unlock
-            if cfg['silent aimbot']['mode'] == 'Automatic' then
+            if cfg['targeting']['mode'] == 'Automatic' then
                 CurrentTarget = nil
                 CachedTarget = nil
             end
@@ -1093,7 +1093,7 @@ local function SilentAimTargetLoop()
         end
         
         -- In Select mode, only find target if we don't have one
-        if cfg['silent aimbot']['mode'] == 'Select' then
+        if cfg['targeting']['mode'] == 'Select' then
             -- If we already have a locked target, validate it
             if CachedTarget then
                 local isValid = true
@@ -1211,8 +1211,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
     
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
-        if cfg['silent aimbot']['mode'] == 'Select' then
-            if cfg['silent aimbot']['function'] == 'Toggle' then
+        if cfg['targeting']['mode'] == 'Select' then
+            if cfg['silent aimbot']['mode'] == 'Toggle' then
                 -- Toggle mode: press once to lock, press again to unlock
                 if SilentAimActive then
                     -- Unlock current target
@@ -1227,7 +1227,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
                     SilentAimActive = true
                     print("Silent Aim: Searching for target...")
                 end
-            elseif cfg['silent aimbot']['function'] == 'Hold' then
+            elseif cfg['silent aimbot']['mode'] == 'Hold' then
                 -- Hold mode: hold to lock, release to unlock
                 if not SilentAimActive then
                     SilentAimActive = true
@@ -1276,8 +1276,8 @@ UserInputService.InputEnded:Connect(function(input, processed)
     
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
-        if cfg['silent aimbot']['mode'] == 'Select' then
-            if cfg['silent aimbot']['function'] == 'Hold' then
+        if cfg['targeting']['mode'] == 'Select' then
+            if cfg['silent aimbot']['mode'] == 'Hold' then
                 -- Release to unlock
                 SilentAimActive = false
                 CurrentTarget = nil
