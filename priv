@@ -211,26 +211,10 @@ local Camera = Workspace.CurrentCamera
 
 -- Fix camera zoom spazzing when near objects/players
 Camera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-LocalPlayer.CameraMaxZoomDistance = 128
-LocalPlayer.CameraMinZoomDistance = 0.5
 
 -- Disable camera occlusion (prevents zoom spazzing near walls/players)
 pcall(function()
     LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
-end)
-
--- Lock camera mode to prevent external scripts from changing it
-task.spawn(function()
-    while task.wait(0.5) do
-        pcall(function()
-            if LocalPlayer.CameraMode ~= Enum.CameraMode.Classic then
-                LocalPlayer.CameraMode = Enum.CameraMode.Classic
-            end
-            if LocalPlayer.DevCameraOcclusionMode ~= Enum.DevCameraOcclusionMode.Invisicam then
-                LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
-            end
-        end)
-    end
 end)
 
 -- Performance Optimizations
