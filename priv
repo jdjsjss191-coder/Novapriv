@@ -353,6 +353,7 @@ local function GetClosestBodyPart(char, mousePos)
     local bodyparts = GetBodyParts(char)
     local validCandidates = {}
     
+    -- Filter valid parts first
     for name, part in pairs(bodyparts) do
         if IsValidAddress(part) then
             table.insert(validCandidates, part)
@@ -369,11 +370,12 @@ local function GetClosestBodyPart(char, mousePos)
         
         local dist
         if not onscreen or screenpos.Z <= 0 then
+            -- Heavily penalize off-screen parts but don't exclude them
             dist = 999999
         else
             local dx = screenpos.X - mousePos.X
             local dy = screenpos.Y - mousePos.Y
-            dist = dx * dx + dy * dy
+            dist = math_sqrt(dx * dx + dy * dy)
         end
         
         if dist < bestDist then
@@ -398,6 +400,7 @@ local function GetClosestPointOnTarget(char, mousePos)
     local bodyparts = GetBodyParts(char)
     local screenPositions = {}
     
+    -- Collect all visible body part positions
     for name, part in pairs(bodyparts) do
         if IsValidAddress(part) then
             local screenPos, visible = Camera:WorldToViewportPoint(part.Position)
@@ -408,6 +411,7 @@ local function GetClosestPointOnTarget(char, mousePos)
     end
     
     if #screenPositions == 0 then
+        -- Fallback: use estimated bounding box
         local boxWidth = 60
         local boxHeight = 120
         local closestX = math_clamp(mousePos.X, targetScreen.X - boxWidth/2, targetScreen.X + boxWidth/2)
@@ -415,6 +419,7 @@ local function GetClosestPointOnTarget(char, mousePos)
         return Vector2_new(closestX, closestY)
     end
     
+    -- Calculate actual bounding box from visible parts
     local minX, maxX = screenPositions[1].X, screenPositions[1].X
     local minY, maxY = screenPositions[1].Y, screenPositions[1].Y
     
@@ -425,12 +430,14 @@ local function GetClosestPointOnTarget(char, mousePos)
         maxY = math_max(maxY, pos.Y)
     end
     
+    -- Add padding
     local padding = 10
     minX = minX - padding
     maxX = maxX + padding
     minY = minY - padding
     maxY = maxY + padding
     
+    -- Find closest point on bounding box to mouse
     local closestX = math_clamp(mousePos.X, minX, maxX)
     local closestY = math_clamp(mousePos.Y, minY, maxY)
     
@@ -547,7 +554,7 @@ local function MouseInFOVConfig(fovcfg, targetpart)
 end
 
 -- ============================================================================
--- TARGET FINDING
+-- TARGET FINDING (Enhanced)
 -- ============================================================================
 
 local function FindTargetClosestToMouse(fovcfg, distcfg, knifecheck)
@@ -1027,25 +1034,38 @@ grm.__index = function(self, key)
             local hrp = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then return oldindex(self, key) end
             
-            -- Only check distance if enabled
+            -- Distance check
             if not WithinDistance(hrp, cfg['silent aimbot']['distance']) then return oldindex(self, key) end
             
+            -- Get target part based on hitpart setting
             local targetPart = nil
+            local mousePos = UserInputService:GetMouseLocation()
+            
             if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
-                local mousePos = UserInputService:GetMouseLocation()
                 targetPart = GetClosestBodyPart(CurrentTarget.Character, mousePos)
+                if not targetPart then
+                    targetPart = hrp
+                end
             elseif cfg['silent aimbot']['hitpart'] == 'Closest Point' then
+                -- For Closest Point, we return the HRP but the aim will be adjusted
                 targetPart = hrp
             else
+                -- Specific body part
                 targetPart = CurrentTarget.Character:FindFirstChild(cfg['silent aimbot']['hitpart'])
-            end
-            
-            if not targetPart then
-                targetPart = hrp
+                if not targetPart then
+                    targetPart = hrp
+                end
             end
             
             if targetPart then
                 local predpos = PredictedPosition(targetPart, cfg['silent aimbot'])
+                
+                -- Validate predicted position
+                if predpos.X ~= predpos.X or predpos.Y ~= predpos.Y or predpos.Z ~= predpos.Z then
+                    -- NaN detected, use current position
+                    predpos = targetPart.Position
+                end
+                
                 return CFrame_new(predpos)
             end
         end
