@@ -209,6 +209,30 @@ repeat task.wait() until LocalPlayer.Character
 local Mouse = LocalPlayer:GetMouse()
 local Camera = Workspace.CurrentCamera
 
+-- Fix camera zoom spazzing when near objects/players
+Camera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+LocalPlayer.CameraMaxZoomDistance = 128
+LocalPlayer.CameraMinZoomDistance = 0.5
+
+-- Disable camera occlusion (prevents zoom spazzing near walls/players)
+pcall(function()
+    LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+end)
+
+-- Lock camera mode to prevent external scripts from changing it
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            if LocalPlayer.CameraMode ~= Enum.CameraMode.Classic then
+                LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            end
+            if LocalPlayer.DevCameraOcclusionMode ~= Enum.DevCameraOcclusionMode.Invisicam then
+                LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+            end
+        end)
+    end
+end)
+
 -- Performance Optimizations
 local math_sqrt = math.sqrt
 local math_huge = math.huge
@@ -1464,16 +1488,28 @@ RunService.RenderStepped:Connect(function(dt)
             end
             
             if targetPart then
-                local predictedPos = PredictedPosition(targetPart, cfg['camlock'])
-                local currentCFrame = Camera.CFrame
-                
-                -- Calculate target look direction
-                local lookVector = (predictedPos - currentCFrame.Position).Unit
-                local targetCFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + lookVector)
-                
-                -- Apply smoothness with clamped value
-                local smoothness = math.clamp(cfg['camlock']['smoothness'], 0.01, 1)
-                Camera.CFrame = currentCFrame:Lerp(targetCFrame, smoothness)
+                -- Check distance to prevent spazzing when too close
+                local myChar = LocalPlayer.Character
+                if myChar then
+                    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+                    if myHRP then
+                        local distance = (myHRP.Position - targetPart.Position).Magnitude
+                        
+                        -- Only apply camlock if not too close (prevents spazzing)
+                        if distance > 3 then
+                            local predictedPos = PredictedPosition(targetPart, cfg['camlock'])
+                            local currentCFrame = Camera.CFrame
+                            
+                            -- Calculate target look direction
+                            local lookVector = (predictedPos - currentCFrame.Position).Unit
+                            local targetCFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + lookVector)
+                            
+                            -- Apply smoothness with clamped value
+                            local smoothness = math.clamp(cfg['camlock']['smoothness'], 0.01, 1)
+                            Camera.CFrame = currentCFrame:Lerp(targetCFrame, smoothness)
+                        end
+                    end
+                end
             end
         end
     end
