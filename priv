@@ -1330,7 +1330,6 @@ end
 
 local grm = getrawmetatable(game)
 local oldindex = grm.__index
-local oldnewindex = grm.__newindex
 setreadonly(grm, false)
 
 grm.__index = newcclosure(function(self, key)
