@@ -70,23 +70,30 @@ local function ModifyBulletVelocity()
     local char = LocalPlayer.Character
     if not char then return end
     
-    -- Find bullets in workspace
-    local bullets = Workspace:GetDescendants()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    -- Find bullets in workspace (with pcall for safety)
+    local success, bullets = pcall(function()
+        return Workspace:GetDescendants()
+    end)
+    
+    if not success or not bullets then return end
+    
     for _, obj in ipairs(bullets) do
         if obj:IsA("BasePart") and (obj.Name == "Bullet" or obj.Name == "Part") then
-            -- Check if it's a bullet by checking velocity
-            if obj.AssemblyLinearVelocity.Magnitude > 100 then
-                -- Calculate distance from player
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local distance = (obj.Position - hrp.Position).Magnitude
-                    
-                    -- If bullet traveled beyond max distance, reduce velocity or destroy
-                    if distance > cfg['bullet distance']['max distance'] then
-                        -- Method 1: Reduce velocity dramatically
+            local velocitySuccess, velocity = pcall(function()
+                return obj.AssemblyLinearVelocity
+            end)
+            
+            if velocitySuccess and velocity and velocity.Magnitude > 100 then
+                local distance = (obj.Position - hrp.Position).Magnitude
+                
+                -- If bullet traveled beyond max distance, reduce velocity
+                if distance > cfg['bullet distance']['max distance'] then
+                    pcall(function()
                         obj.AssemblyLinearVelocity = obj.AssemblyLinearVelocity * 0.1
                         
-                        -- Method 2: Add downward force (bullet drop)
                         local bodyVelocity = obj:FindFirstChildOfClass("BodyVelocity")
                         if not bodyVelocity then
                             bodyVelocity = Instance.new("BodyVelocity")
@@ -94,7 +101,7 @@ local function ModifyBulletVelocity()
                             bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
                             bodyVelocity.Parent = obj
                         end
-                    end
+                    end)
                 end
             end
         end
@@ -116,24 +123,31 @@ local function ApplyBulletDrop()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     
-    -- Find and modify bullets
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name:find("Bullet") then
-            local distance = (obj.Position - hrp.Position).Magnitude
-            
-            if distance > cfg['bullet distance']['max distance'] * 0.7 then
-                -- Apply increasing gravity as bullet approaches max distance
-                local dropForce = (distance / cfg['bullet distance']['max distance']) * 50
+    -- Find and modify bullets (with pcall for safety)
+    local success, descendants = pcall(function()
+        return Workspace:GetDescendants()
+    end)
+    
+    if not success or not descendants then return end
+    
+    for _, obj in ipairs(descendants) do
+        pcall(function()
+            if obj:IsA("BasePart") and obj.Name:find("Bullet") then
+                local distance = (obj.Position - hrp.Position).Magnitude
                 
-                local bodyForce = obj:FindFirstChildOfClass("BodyForce")
-                if not bodyForce then
-                    bodyForce = Instance.new("BodyForce")
-                    bodyForce.Parent = obj
+                if distance > cfg['bullet distance']['max distance'] * 0.7 then
+                    local dropForce = (distance / cfg['bullet distance']['max distance']) * 50
+                    
+                    local bodyForce = obj:FindFirstChildOfClass("BodyForce")
+                    if not bodyForce then
+                        bodyForce = Instance.new("BodyForce")
+                        bodyForce.Parent = obj
+                    end
+                    
+                    bodyForce.Force = Vector3.new(0, -dropForce * obj:GetMass() * workspace.Gravity, 0)
                 end
-                
-                bodyForce.Force = Vector3.new(0, -dropForce * obj:GetMass() * workspace.Gravity, 0)
             end
-        end
+        end)
     end
 end
 
