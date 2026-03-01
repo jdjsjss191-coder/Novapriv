@@ -33,6 +33,147 @@ end)
 print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
 
 -- ============================================================================
+-- BULLET DISTANCE CONTROL
+-- ============================================================================
+
+-- Hook 1: Spread-based distance control
+local BulletDistanceSpreadHook
+BulletDistanceSpreadHook = hookfunction(math.random, function(...)
+    local args = {...}
+    if checkcaller() then
+        return BulletDistanceSpreadHook(...)
+    end
+    
+    -- Detect bullet spread calls
+    if (#args == 0) or 
+       (args[1] == -0.05 and args[2] == 0.05) or 
+       (args[1] == -0.1) or 
+       (args[1] == -0.05) then
+        
+        -- Apply sniper DB first
+        local result = BulletDistanceSpreadHook(...)
+        if cfg['sniper db']['enabled'] then
+            result = result * (cfg['sniper db']['spread amount'] / 100)
+        end
+        
+        -- Apply bullet distance control via spread
+        if cfg['bullet distance']['enabled'] and (cfg['bullet distance']['method'] == 'All' or cfg['bullet distance']['method'] == 'Spread') then
+            local char = LocalPlayer.Character
+            if char then
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then
+                    local handle = tool:FindFirstChild("Handle")
+                    if handle then
+                        -- Calculate distance to target
+                        local targetDist = 9999
+                        if CurrentTarget and CurrentTarget.Character then
+                            local hrp = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
+                            if hrp then
+                                local playerHrp = char:FindFirstChild("HumanoidRootPart")
+                                if playerHrp then
+                                    targetDist = (hrp.Position - playerHrp.Position).Magnitude
+                                end
+                            end
+                        end
+                        
+                        -- If target is beyond max distance, increase spread dramatically
+                        if targetDist > cfg['bullet distance']['max distance'] then
+                            local spreadMultiplier = (targetDist / cfg['bullet distance']['max distance']) * 10
+                            result = result * spreadMultiplier
+                        end
+                    end
+                end
+            end
+        end
+        
+        return result
+    end
+    
+    return BulletDistanceSpreadHook(...)
+end)
+
+print("Bullet Distance Control: " .. (cfg['bullet distance']['enabled'] and "Enabled" or "Disabled") .. " (Max: " .. cfg['bullet distance']['max distance'] .. " studs)")
+
+-- ============================================================================
+-- BULLET VELOCITY CONTROL
+-- ============================================================================
+
+-- Monitor and modify bullet velocity for distance control
+local function ModifyBulletVelocity()
+    if not cfg['bullet distance']['enabled'] then return end
+    if cfg['bullet distance']['method'] ~= 'All' and cfg['bullet distance']['method'] ~= 'Velocity' then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    -- Find bullets in workspace
+    local bullets = Workspace:GetDescendants()
+    for _, obj in ipairs(bullets) do
+        if obj:IsA("BasePart") and (obj.Name == "Bullet" or obj.Name == "Part") then
+            -- Check if it's a bullet by checking velocity
+            if obj.AssemblyLinearVelocity.Magnitude > 100 then
+                -- Calculate distance from player
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local distance = (obj.Position - hrp.Position).Magnitude
+                    
+                    -- If bullet traveled beyond max distance, reduce velocity or destroy
+                    if distance > cfg['bullet distance']['max distance'] then
+                        -- Method 1: Reduce velocity dramatically
+                        obj.AssemblyLinearVelocity = obj.AssemblyLinearVelocity * 0.1
+                        
+                        -- Method 2: Add downward force (bullet drop)
+                        local bodyVelocity = obj:FindFirstChildOfClass("BodyVelocity")
+                        if not bodyVelocity then
+                            bodyVelocity = Instance.new("BodyVelocity")
+                            bodyVelocity.Velocity = Vector3.new(0, -200, 0)
+                            bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+                            bodyVelocity.Parent = obj
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ============================================================================
+-- BULLET DROP CONTROL
+-- ============================================================================
+
+-- Apply bullet drop based on distance
+local function ApplyBulletDrop()
+    if not cfg['bullet distance']['enabled'] then return end
+    if cfg['bullet distance']['method'] ~= 'All' and cfg['bullet distance']['method'] ~= 'Drop' then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    -- Find and modify bullets
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name:find("Bullet") then
+            local distance = (obj.Position - hrp.Position).Magnitude
+            
+            if distance > cfg['bullet distance']['max distance'] * 0.7 then
+                -- Apply increasing gravity as bullet approaches max distance
+                local dropForce = (distance / cfg['bullet distance']['max distance']) * 50
+                
+                local bodyForce = obj:FindFirstChildOfClass("BodyForce")
+                if not bodyForce then
+                    bodyForce = Instance.new("BodyForce")
+                    bodyForce.Parent = obj
+                end
+                
+                bodyForce.Force = Vector3.new(0, -dropForce * obj:GetMass() * workspace.Gravity, 0)
+            end
+        end
+    end
+end
+
+-- ============================================================================
 -- HITBOX EXPANDER
 -- ============================================================================
 
@@ -1037,6 +1178,21 @@ grm.__index = function(self, key)
             -- Distance check
             if not WithinDistance(hrp, cfg['silent aimbot']['distance']) then return oldindex(self, key) end
             
+            -- Bullet distance control - prevent shooting beyond max distance
+            if cfg['bullet distance']['enabled'] then
+                local char = LocalPlayer.Character
+                if char then
+                    local playerHrp = char:FindFirstChild("HumanoidRootPart")
+                    if playerHrp then
+                        local targetDistance = (hrp.Position - playerHrp.Position).Magnitude
+                        if targetDistance > cfg['bullet distance']['max distance'] then
+                            -- Target is beyond bullet range, don't aim
+                            return oldindex(self, key)
+                        end
+                    end
+                end
+            end
+            
             -- Get target part based on hitpart setting
             local targetPart = nil
             local mousePos = UserInputService:GetMouseLocation()
@@ -1334,6 +1490,16 @@ RunService.RenderStepped:Connect(function(dt)
             if hum then
                 hum.WalkSpeed = cfg['movement']['speed']['value']
             end
+        end
+    end
+    
+    -- Bullet distance control
+    if cfg['bullet distance']['enabled'] then
+        if cfg['bullet distance']['method'] == 'All' or cfg['bullet distance']['method'] == 'Velocity' then
+            ModifyBulletVelocity()
+        end
+        if cfg['bullet distance']['method'] == 'All' or cfg['bullet distance']['method'] == 'Drop' then
+            ApplyBulletDrop()
         end
     end
     
