@@ -1,10 +1,8 @@
--- Nova Silent Aim - Working Version
-print("Loading Nova Silent Aim...")
+
 
 -- Wait for config
 repeat task.wait() until shared.Nova
-local cfg = shared.Nova
-print("Config loaded!")
+
 
 -- ============================================================================
 -- SNIPER DB (NO SPREAD) HOOK
@@ -30,7 +28,6 @@ SniperDBHook = hookfunction(math.random, function(...)
     return SniperDBHook(...)
 end)
 
-print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
 
 -- ============================================================================
 -- HITBOX EXPANDER
@@ -145,8 +142,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("Hitbox Expander loaded! (Size: " .. cfg['hitbox expander']['size'] .. ", Transparency: " .. cfg['hitbox expander']['transparency'] .. ")")
-
 -- Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -212,7 +207,6 @@ local RayParams = RaycastParams.new()
 RayParams.FilterType = Enum.RaycastFilterType.Exclude
 RayParams.IgnoreWater = true
 
-print("Drawing objects created!")
 
 -- ============================================================================
 -- UTILITY FUNCTIONS
@@ -454,7 +448,6 @@ local function PredictedPosition(part, config)
     )
 end
 
-print("Utility functions loaded!")
 
 -- ============================================================================
 -- FOV FUNCTIONS
@@ -733,7 +726,6 @@ local function CalculateTargetPartPosition(target, config)
     return partpos
 end
 
-print("Target finding functions loaded!")
 
 -- ============================================================================
 -- FOV VISUALIZATION - DISABLED
@@ -999,7 +991,6 @@ local function RefreshESP()
     end
 end
 
-print("ESP system loaded!")
 
 -- ============================================================================
 -- SILENT AIM HOOK
@@ -1057,7 +1048,6 @@ end
 
 setreadonly(grm, true)
 
-print("Silent aim hook installed! (360° mode - shoots anywhere)")
 
 -- ============================================================================
 -- TARGET ACQUISITION LOOP
@@ -1117,7 +1107,6 @@ local function SilentAimTargetLoop()
                     CurrentTarget = nil
                     FoundTarget = false
                     SilentAimActive = false -- Auto-deactivate when target dies
-                    print("Target lost - press key again to lock new target")
                 end
             else
                 -- No cached target, find new one
@@ -1141,7 +1130,6 @@ local function SilentAimTargetLoop()
                     CurrentTarget = target
                     CachedTarget = target
                     FoundTarget = true
-                    print("Locked onto: " .. target.Name)
                 else
                     CurrentTarget = nil
                     FoundTarget = false
@@ -1221,17 +1209,14 @@ UserInputService.InputBegan:Connect(function(input, processed)
                     CachedTarget = nil
                     FoundTarget = false
                     TargetLine.Visible = false
-                    print("Silent Aim: Unlocked")
                 else
                     -- Lock onto new target
                     SilentAimActive = true
-                    print("Silent Aim: Searching for target...")
                 end
             elseif cfg['silent aimbot']['function'] == 'Hold' then
                 -- Hold mode: hold to lock, release to unlock
                 if not SilentAimActive then
                     SilentAimActive = true
-                    print("Silent Aim: Searching for target...")
                 end
             end
         end
@@ -1240,19 +1225,16 @@ UserInputService.InputBegan:Connect(function(input, processed)
     local triggerKey = cfg['binds']['triggerbot']
     if input.KeyCode.Name == triggerKey then
         TriggerBotEnabled = not TriggerBotEnabled
-        print("Triggerbot:", TriggerBotEnabled)
     end
     
     local jumpKey = cfg['binds']['super jump']
     if input.KeyCode.Name == jumpKey then
         SuperJumpEnabled = not SuperJumpEnabled
-        print("Super Jump:", SuperJumpEnabled)
     end
     
     local espKey = cfg['binds']['esp']
     if input.KeyCode.Name == espKey then
         cfg['esp']['enabled'] = not cfg['esp']['enabled']
-        print("ESP:", cfg['esp']['enabled'])
         if cfg['esp']['enabled'] then
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -1267,7 +1249,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
     local speedKey = cfg['binds']['speed']
     if input.KeyCode.Name == speedKey then
         SpeedEnabled = not SpeedEnabled
-        print("Speed:", SpeedEnabled)
     end
 end)
 
@@ -1284,13 +1265,11 @@ UserInputService.InputEnded:Connect(function(input, processed)
                 CachedTarget = nil
                 FoundTarget = false
                 TargetLine.Visible = false
-                print("Silent Aim: Released and unlocked")
             end
         end
     end
 end)
 
-print("Input handling loaded!")
 
 -- ============================================================================
 -- MAIN RENDER LOOP
@@ -1373,5 +1352,4 @@ task.spawn(SilentAimTargetLoop)
 -- Start Rapid Fire if enabled
 if cfg['rapid fire'] and cfg['rapid fire']['enabled'] then
     StartRapidFire()
-    print("Rapid Fire: Enabled (100 shots/sec)")
 end
