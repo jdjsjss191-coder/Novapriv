@@ -1020,29 +1020,43 @@ setreadonly(grm, false)
 grm.__index = function(self, key)
     if not checkcaller() and self == Mouse and cfg['silent aimbot']['enabled'] then
         if key == "Hit" then
+            -- Automatic mode activation
             if cfg['targeting']['mode'] == 'Automatic' then
                 SilentAimActive = true
             end
             
+            -- Check if silent aim is active
             if not SilentAimActive then return oldindex(self, key) end
             if not CurrentTarget then return oldindex(self, key) end
             if not CurrentTarget.Character then return oldindex(self, key) end
             
+            -- Validation checks
             if PlayerDead(CurrentTarget) then return oldindex(self, key) end
             if PlayerKnocked(CurrentTarget) then return oldindex(self, key) end
             
-            local hrp = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
+            local char = CurrentTarget.Character
+            local hrp = char:FindFirstChild("HumanoidRootPart")
             if not hrp then return oldindex(self, key) end
             
             -- Distance check
             if not WithinDistance(hrp, cfg['silent aimbot']['distance']) then return oldindex(self, key) end
+            
+            -- Visibility check (if enabled)
+            if cfg['settings']['visible check'] and not CanSee(hrp) then 
+                return oldindex(self, key) 
+            end
+            
+            -- FOV check (if enabled)
+            if cfg['silent aimbot']['fov']['enabled'] and not MouseInFOVConfig(cfg['silent aimbot']['fov'], hrp) then
+                return oldindex(self, key)
+            end
             
             -- Get target part based on hitpart setting
             local targetPart = nil
             local mousePos = UserInputService:GetMouseLocation()
             
             if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
-                targetPart = GetClosestBodyPart(CurrentTarget.Character, mousePos)
+                targetPart = GetClosestBodyPart(char, mousePos)
                 if not targetPart then
                     targetPart = hrp
                 end
@@ -1051,18 +1065,18 @@ grm.__index = function(self, key)
                 targetPart = hrp
             else
                 -- Specific body part
-                targetPart = CurrentTarget.Character:FindFirstChild(cfg['silent aimbot']['hitpart'])
+                targetPart = char:FindFirstChild(cfg['silent aimbot']['hitpart'])
                 if not targetPart then
                     targetPart = hrp
                 end
             end
             
             if targetPart then
+                -- Apply prediction
                 local predpos = PredictedPosition(targetPart, cfg['silent aimbot'])
                 
-                -- Validate predicted position
+                -- Validate predicted position (NaN check)
                 if predpos.X ~= predpos.X or predpos.Y ~= predpos.Y or predpos.Z ~= predpos.Z then
-                    -- NaN detected, use current position
                     predpos = targetPart.Position
                 end
                 
