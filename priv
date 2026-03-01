@@ -943,6 +943,15 @@ local function RefreshESP()
         return
     end
     
+    -- Debug: Print current target info once per second
+    local now = tick()
+    if not _G.LastESPDebug or now - _G.LastESPDebug > 1 then
+        _G.LastESPDebug = now
+        if CurrentTarget then
+            print("DEBUG ESP: CurrentTarget =", CurrentTarget.Name, "UserId:", CurrentTarget.UserId)
+        end
+    end
+    
     for userid, esp in pairs(ESPLabels) do
         local player = esp.player
         if not player or not player.Parent then
@@ -983,8 +992,16 @@ local function RefreshESP()
                 
                 esp.nametag.Text = text
                 
-                if CurrentTarget == player then
+                -- Check if this player is the current target
+                local isTarget = false
+                if CurrentTarget and CurrentTarget == player then
+                    isTarget = true
                     esp.nametag.Color = cfg['esp']['target color'] or Color3.fromRGB(255, 0, 0)
+                    -- Debug output (only once per second per player)
+                    if not esp.lastDebug or tick() - esp.lastDebug > 1 then
+                        esp.lastDebug = tick()
+                        print("DEBUG: ESP color changed to RED for", player.Name)
+                    end
                 else
                     esp.nametag.Color = cfg['esp']['color']
                 end
@@ -1142,6 +1159,7 @@ local function SilentAimTargetLoop()
                     CachedTarget = target
                     FoundTarget = true
                     print("Locked onto: " .. target.Name)
+                    print("DEBUG: CurrentTarget set to player:", target.Name, "UserId:", target.UserId)
                 else
                     CurrentTarget = nil
                     FoundTarget = false
