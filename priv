@@ -7,41 +7,14 @@ local cfg = shared.Nova
 print("Config loaded!")
 
 -- ============================================================================
--- SNIPER DB (NO SPREAD) HOOK
+-- SNIPER DB (NO SPREAD) + BULLET DISTANCE CONTROL
 -- ============================================================================
 
-local SniperDBHook
-SniperDBHook = hookfunction(math.random, function(...)
+local CombinedSpreadHook
+CombinedSpreadHook = hookfunction(math.random, function(...)
     local args = {...}
     if checkcaller() then
-        return SniperDBHook(...)
-    end
-    
-    -- Detect bullet spread calls
-    if (#args == 0) or 
-       (args[1] == -0.05 and args[2] == 0.05) or 
-       (args[1] == -0.1) or 
-       (args[1] == -0.05) then
-        if cfg['sniper db']['enabled'] then
-            return SniperDBHook(...) * (cfg['sniper db']['spread amount'] / 100)
-        end
-    end
-    
-    return SniperDBHook(...)
-end)
-
-print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
-
--- ============================================================================
--- BULLET DISTANCE CONTROL
--- ============================================================================
-
--- Hook 1: Spread-based distance control
-local BulletDistanceSpreadHook
-BulletDistanceSpreadHook = hookfunction(math.random, function(...)
-    local args = {...}
-    if checkcaller() then
-        return BulletDistanceSpreadHook(...)
+        return CombinedSpreadHook(...)
     end
     
     -- Detect bullet spread calls
@@ -50,8 +23,9 @@ BulletDistanceSpreadHook = hookfunction(math.random, function(...)
        (args[1] == -0.1) or 
        (args[1] == -0.05) then
         
-        -- Apply sniper DB first
-        local result = BulletDistanceSpreadHook(...)
+        local result = CombinedSpreadHook(...)
+        
+        -- Apply sniper DB spread reduction
         if cfg['sniper db']['enabled'] then
             result = result * (cfg['sniper db']['spread amount'] / 100)
         end
@@ -59,28 +33,17 @@ BulletDistanceSpreadHook = hookfunction(math.random, function(...)
         -- Apply bullet distance control via spread
         if cfg['bullet distance']['enabled'] and (cfg['bullet distance']['method'] == 'All' or cfg['bullet distance']['method'] == 'Spread') then
             local char = LocalPlayer.Character
-            if char then
-                local tool = char:FindFirstChildOfClass("Tool")
-                if tool then
-                    local handle = tool:FindFirstChild("Handle")
-                    if handle then
-                        -- Calculate distance to target
-                        local targetDist = 9999
-                        if CurrentTarget and CurrentTarget.Character then
-                            local hrp = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
-                            if hrp then
-                                local playerHrp = char:FindFirstChild("HumanoidRootPart")
-                                if playerHrp then
-                                    targetDist = (hrp.Position - playerHrp.Position).Magnitude
-                                end
-                            end
-                        end
-                        
-                        -- If target is beyond max distance, increase spread dramatically
-                        if targetDist > cfg['bullet distance']['max distance'] then
-                            local spreadMultiplier = (targetDist / cfg['bullet distance']['max distance']) * 10
-                            result = result * spreadMultiplier
-                        end
+            if char and CurrentTarget and CurrentTarget.Character then
+                local hrp = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
+                local playerHrp = char:FindFirstChild("HumanoidRootPart")
+                
+                if hrp and playerHrp then
+                    local targetDist = (hrp.Position - playerHrp.Position).Magnitude
+                    
+                    -- If target is beyond max distance, increase spread dramatically
+                    if targetDist > cfg['bullet distance']['max distance'] then
+                        local spreadMultiplier = (targetDist / cfg['bullet distance']['max distance']) * 10
+                        result = result * spreadMultiplier
                     end
                 end
             end
@@ -89,9 +52,10 @@ BulletDistanceSpreadHook = hookfunction(math.random, function(...)
         return result
     end
     
-    return BulletDistanceSpreadHook(...)
+    return CombinedSpreadHook(...)
 end)
 
+print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
 print("Bullet Distance Control: " .. (cfg['bullet distance']['enabled'] and "Enabled" or "Disabled") .. " (Max: " .. cfg['bullet distance']['max distance'] .. " studs)")
 
 -- ============================================================================
