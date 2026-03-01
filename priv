@@ -1388,46 +1388,6 @@ grm.__index = newcclosure(function(self, key)
     end
     return oldindex(self, key)
 end)
-            
-            if PlayerDead(player) then return oldindex(self, key) end
-            if PlayerKnocked(player) then return oldindex(self, key) end
-            
-            -- Check visibility if enabled
-            if cfg['settings']['visible check'] then
-                local hrp = character:FindFirstChild("HumanoidRootPart")
-                if hrp and not CanSee(hrp) then
-                    return oldindex(self, key)
-                end
-            end
-            
-            -- Check FOV if enabled
-            if cfg['silent aimbot']['fov']['enabled'] then
-                local hrp = character:FindFirstChild("HumanoidRootPart")
-                if hrp and not MouseInFOVConfig(cfg['silent aimbot']['fov'], hrp) then
-                    return oldindex(self, key)
-                end
-            end
-            
-            local targetPart = nil
-            if cfg['silent aimbot']['hitpart'] == 'Closest Part' then
-                local mousePos = UserInputService:GetMouseLocation()
-                targetPart = GetClosestBodyPart(character, mousePos)
-            else
-                targetPart = character:FindFirstChild(cfg['silent aimbot']['hitpart'])
-            end
-            
-            if not targetPart then
-                targetPart = character:FindFirstChild("HumanoidRootPart")
-            end
-            
-            if targetPart then
-                local predpos = PredictedPosition(targetPart, cfg['silent aimbot'])
-                return CFrame_new(predpos)
-            end
-        end
-    end
-    return oldindex(self, key)
-end)
 
 setreadonly(grm, true)
 
