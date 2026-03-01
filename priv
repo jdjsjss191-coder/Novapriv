@@ -1,10 +1,8 @@
 -- Nova Silent Aim - Working Version
-print("Loading Nova Silent Aim...")
 
 -- Wait for config
 repeat task.wait() until shared.Nova
 local cfg = shared.Nova
-print("Config loaded!")
 
 -- ============================================================================
 -- SNIPER DB (NO SPREAD) HOOK
@@ -29,8 +27,6 @@ SniperDBHook = hookfunction(math.random, function(...)
     
     return SniperDBHook(...)
 end)
-
-print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
 
 -- ============================================================================
 -- HITBOX EXPANDER
@@ -145,8 +141,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("Hitbox Expander loaded! (Size: " .. cfg['hitbox expander']['size'] .. ", Transparency: " .. cfg['hitbox expander']['transparency'] .. ")")
-
 -- Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -184,6 +178,11 @@ local LastTriggerClick = 0
 local LastTargetScan = 0
 local ScanRate = 1 / 60
 
+-- Camlock State
+local CamlockActive = false
+local CamlockTarget = nil
+local CamlockCachedTarget = nil
+
 -- Rapid Fire State
 local RapidFireActive = false
 
@@ -211,8 +210,6 @@ local FOV2DBoxes = {
 local RayParams = RaycastParams.new()
 RayParams.FilterType = Enum.RaycastFilterType.Exclude
 RayParams.IgnoreWater = true
-
-print("Drawing objects created!")
 
 -- ============================================================================
 -- UTILITY FUNCTIONS
@@ -453,8 +450,6 @@ local function PredictedPosition(part, config)
         vel.Z * predZ
     )
 end
-
-print("Utility functions loaded!")
 
 -- ============================================================================
 -- FOV FUNCTIONS
@@ -733,7 +728,50 @@ local function CalculateTargetPartPosition(target, config)
     return partpos
 end
 
-print("Target finding functions loaded!")
+local function FindCamlockTarget()
+    if HoldingKnife() then return nil end
+    
+    local mousePos = UserInputService:GetMouseLocation()
+    local fovcfg = cfg['camlock']['fov']
+    local distcfg = cfg['camlock']['distance']
+    local fovSizeSquared = fovcfg and fovcfg['enabled'] and (fovcfg['size'] * fovcfg['size']) or math_huge
+    
+    local closestPlayer = nil
+    local closestDistSquared = math_huge
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not player.Character then continue end
+        if not IsValidAddress(player.Character) then continue end
+        
+        local head = player.Character:FindFirstChild("Head")
+        if not head then continue end
+        if IsSameTeam(player) then continue end
+        if PlayerDead(player) then continue end
+        if PlayerKnocked(player) then continue end
+        if PlayerGrabbed(player) then continue end
+        
+        local screenCoords, onScreen = Camera:WorldToViewportPoint(head.Position)
+        if not onScreen or screenCoords.Z <= 0 then continue end
+        
+        local screenPos2D = Vector2_new(screenCoords.X, screenCoords.Y)
+        local dx = mousePos.X - screenPos2D.X
+        local dy = mousePos.Y - screenPos2D.Y
+        local distSquared = dx * dx + dy * dy
+        
+        if fovcfg and fovcfg['enabled'] and distSquared > fovSizeSquared then continue end
+        
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and not WithinDistance(hrp, distcfg) then continue end
+        
+        if distSquared < closestDistSquared then
+            closestDistSquared = distSquared
+            closestPlayer = player
+        end
+    end
+    
+    return closestPlayer
+end
 
 -- ============================================================================
 -- FOV VISUALIZATION - DISABLED
@@ -999,8 +1037,6 @@ local function RefreshESP()
     end
 end
 
-print("ESP system loaded!")
-
 -- ============================================================================
 -- SILENT AIM HOOK
 -- ============================================================================
@@ -1057,7 +1093,58 @@ end
 
 setreadonly(grm, true)
 
-print("Silent aim hook installed! (360° mode - shoots anywhere)")
+-- ============================================================================
+-- CAMLOCK LOOP
+-- ============================================================================
+
+local function CamlockLoop()
+    while true do
+        task.wait()
+        
+        if not cfg['camlock']['enabled'] or not CamlockActive then
+            CamlockTarget = nil
+            continue
+        end
+        
+        if SelfKnocked() then
+            CamlockTarget = nil
+            CamlockCachedTarget = nil
+            CamlockActive = false
+            continue
+        end
+        
+        -- Validate cached target
+        if CamlockCachedTarget then
+            local isValid = true
+            if not CamlockCachedTarget.Character then
+                isValid = false
+            elseif PlayerDead(CamlockCachedTarget) then
+                isValid = false
+            elseif PlayerKnocked(CamlockCachedTarget) then
+                isValid = false
+            elseif PlayerGrabbed(CamlockCachedTarget) then
+                isValid = false
+            end
+            
+            if isValid then
+                CamlockTarget = CamlockCachedTarget
+            else
+                CamlockCachedTarget = nil
+                CamlockTarget = nil
+                CamlockActive = false
+            end
+        else
+            -- Find new target
+            local target = FindCamlockTarget()
+            if target then
+                CamlockTarget = target
+                CamlockCachedTarget = target
+            else
+                CamlockTarget = nil
+            end
+        end
+    end
+end
 
 -- ============================================================================
 -- TARGET ACQUISITION LOOP
@@ -1117,7 +1204,6 @@ local function SilentAimTargetLoop()
                     CurrentTarget = nil
                     FoundTarget = false
                     SilentAimActive = false -- Auto-deactivate when target dies
-                    print("Target lost - press key again to lock new target")
                 end
             else
                 -- No cached target, find new one
@@ -1141,7 +1227,6 @@ local function SilentAimTargetLoop()
                     CurrentTarget = target
                     CachedTarget = target
                     FoundTarget = true
-                    print("Locked onto: " .. target.Name)
                 else
                     CurrentTarget = nil
                     FoundTarget = false
@@ -1209,6 +1294,23 @@ end
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     
+    local camlockKey = cfg['binds']['camlock']
+    if input.KeyCode.Name == camlockKey then
+        if cfg['camlock']['function'] == 'Toggle' then
+            if CamlockActive then
+                CamlockActive = false
+                CamlockTarget = nil
+                CamlockCachedTarget = nil
+            else
+                CamlockActive = true
+            end
+        elseif cfg['camlock']['function'] == 'Hold' then
+            if not CamlockActive then
+                CamlockActive = true
+            end
+        end
+    end
+    
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
         if cfg['silent aimbot']['mode'] == 'Select' then
@@ -1221,17 +1323,14 @@ UserInputService.InputBegan:Connect(function(input, processed)
                     CachedTarget = nil
                     FoundTarget = false
                     TargetLine.Visible = false
-                    print("Silent Aim: Unlocked")
                 else
                     -- Lock onto new target
                     SilentAimActive = true
-                    print("Silent Aim: Searching for target...")
                 end
             elseif cfg['silent aimbot']['function'] == 'Hold' then
                 -- Hold mode: hold to lock, release to unlock
                 if not SilentAimActive then
                     SilentAimActive = true
-                    print("Silent Aim: Searching for target...")
                 end
             end
         end
@@ -1240,19 +1339,16 @@ UserInputService.InputBegan:Connect(function(input, processed)
     local triggerKey = cfg['binds']['triggerbot']
     if input.KeyCode.Name == triggerKey then
         TriggerBotEnabled = not TriggerBotEnabled
-        print("Triggerbot:", TriggerBotEnabled)
     end
     
     local jumpKey = cfg['binds']['super jump']
     if input.KeyCode.Name == jumpKey then
         SuperJumpEnabled = not SuperJumpEnabled
-        print("Super Jump:", SuperJumpEnabled)
     end
     
     local espKey = cfg['binds']['esp']
     if input.KeyCode.Name == espKey then
         cfg['esp']['enabled'] = not cfg['esp']['enabled']
-        print("ESP:", cfg['esp']['enabled'])
         if cfg['esp']['enabled'] then
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -1267,12 +1363,20 @@ UserInputService.InputBegan:Connect(function(input, processed)
     local speedKey = cfg['binds']['speed']
     if input.KeyCode.Name == speedKey then
         SpeedEnabled = not SpeedEnabled
-        print("Speed:", SpeedEnabled)
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, processed)
     if processed then return end
+    
+    local camlockKey = cfg['binds']['camlock']
+    if input.KeyCode.Name == camlockKey then
+        if cfg['camlock']['function'] == 'Hold' then
+            CamlockActive = false
+            CamlockTarget = nil
+            CamlockCachedTarget = nil
+        end
+    end
     
     local silentKey = cfg['binds']['silent aim']
     if input.KeyCode.Name == silentKey then
@@ -1284,19 +1388,37 @@ UserInputService.InputEnded:Connect(function(input, processed)
                 CachedTarget = nil
                 FoundTarget = false
                 TargetLine.Visible = false
-                print("Silent Aim: Released and unlocked")
             end
         end
     end
 end)
-
-print("Input handling loaded!")
 
 -- ============================================================================
 -- MAIN RENDER LOOP
 -- ============================================================================
 
 RunService.RenderStepped:Connect(function(dt)
+    -- Camlock camera manipulation
+    if CamlockActive and CamlockTarget and cfg['camlock']['enabled'] then
+        local char = CamlockTarget.Character
+        if char then
+            local targetPart = char:FindFirstChild(cfg['camlock']['hitpart'])
+            if not targetPart then
+                targetPart = char:FindFirstChild("HumanoidRootPart")
+            end
+            
+            if targetPart then
+                local predictedPos = PredictedPosition(targetPart, cfg['camlock'])
+                local currentCFrame = Camera.CFrame
+                local targetCFrame = CFrame.new(Camera.CFrame.Position, predictedPos)
+                
+                -- Apply smoothness
+                local smoothness = cfg['camlock']['smoothness']
+                Camera.CFrame = currentCFrame:Lerp(targetCFrame, smoothness)
+            end
+        end
+    end
+    
     TriggerBot()
     
     if SuperJumpEnabled and cfg['movement']['super jump']['enabled'] then
@@ -1369,9 +1491,9 @@ end)
 -- ============================================================================
 
 task.spawn(SilentAimTargetLoop)
+task.spawn(CamlockLoop)
 
 -- Start Rapid Fire if enabled
 if cfg['rapid fire'] and cfg['rapid fire']['enabled'] then
     StartRapidFire()
-    print("Rapid Fire: Enabled (100 shots/sec)")
 end
