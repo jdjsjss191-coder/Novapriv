@@ -7,6 +7,18 @@ task.wait(2)
 repeat task.wait() until shared.Nova
 local cfg = shared.Nova
 
+-- Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+-- Locals
+local LocalPlayer = Players.LocalPlayer
+repeat task.wait() until LocalPlayer.Character
+local Mouse = LocalPlayer:GetMouse()
+local Camera = Workspace.CurrentCamera
+
 -- ============================================================================
 -- SNIPER DB (NO SPREAD) HOOK
 -- ============================================================================
@@ -35,8 +47,6 @@ end)
 -- HITBOX EXPANDER
 -- ============================================================================
 
-local Players = game:GetService('Players')
-local RunService = game:GetService('RunService')
 local EnumMaterial = Enum.Material.Neon
 
 -- Initialize hitbox state
@@ -143,18 +153,6 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
--- Services
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-
--- Locals
-local LocalPlayer = Players.LocalPlayer
-repeat task.wait() until LocalPlayer.Character
-local Mouse = LocalPlayer:GetMouse()
-local Camera = Workspace.CurrentCamera
 
 -- Performance Optimizations
 local math_sqrt = math.sqrt
