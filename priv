@@ -41,15 +41,19 @@ SniperDBHook = hookfunction(math.random, function(...)
 end)
 
 -- ============================================================================
--- BULLET DISTANCE MODIFIER
+-- BULLET DISTANCE MODIFIER (ALL METHODS)
 -- ============================================================================
 
 local function ModifyBulletDistance()
     if not cfg['bullet distance']['enabled'] then return end
     
-    -- Hook __namecall to intercept bullet remotes
+    local customDist = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
+    
+    -- METHOD 1: Hook __namecall for remotes
     local mt = getrawmetatable(game)
     local oldnamecall = mt.__namecall
+    local oldindex = mt.__index
+    local oldnewindex = mt.__newindex
     setreadonly(mt, false)
     
     mt.__namecall = newcclosure(function(self, ...)
@@ -57,34 +61,17 @@ local function ModifyBulletDistance()
         local method = getnamecallmethod()
         
         if not checkcaller() then
-            -- Hook FireServer for bullet remotes
             if method == "FireServer" or method == "InvokeServer" then
-                -- Check if this is a bullet/damage remote
-                local remoteName = tostring(self)
-                
-                if remoteName:find("MainEvent") or 
-                   remoteName:find("Damage") or 
-                   remoteName:find("BULLET") or
-                   remoteName:find("Hit") or
-                   remoteName:find("Remote") then
-                    
-                    -- Modify any distance/range arguments
-                    for i = 1, #args do
-                        if type(args[i]) == "table" then
-                            -- Modify distance fields in tables
-                            if args[i].Distance then
-                                args[i].Distance = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
-                            end
-                            if args[i].Range then
-                                args[i].Range = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
-                            end
-                            if args[i].MaxDistance then
-                                args[i].MaxDistance = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
-                            end
-                        elseif type(args[i]) == "number" and args[i] > 10 and args[i] < 10000 then
-                            -- Likely a distance value, modify it
-                            args[i] = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
-                        end
+                -- Modify all arguments
+                for i = 1, #args do
+                    if type(args[i]) == "table" then
+                        -- Modify distance fields
+                        if args[i].Distance then args[i].Distance = customDist end
+                        if args[i].Range then args[i].Range = customDist end
+                        if args[i].MaxDistance then args[i].MaxDistance = customDist end
+                        if args[i].MaxRange then args[i].MaxRange = customDist end
+                        if args[i].Lifetime then args[i].Lifetime = customDist end
+                        if args[i].MaxLifetime then args[i].MaxLifetime = customDist end
                     end
                 end
             end
@@ -93,60 +80,200 @@ local function ModifyBulletDistance()
         return oldnamecall(self, unpack(args))
     end)
     
+    -- METHOD 2: Hook __index to modify bullet properties when read
+    mt.__index = newcclosure(function(self, key)
+        local result = oldindex(self, key)
+        
+        if not checkcaller() then
+            if type(self) == "userdata" and typeof(self) == "Instance" then
+                local name = tostring(self):lower()
+                if name:find("bullet") or name:find("projectile") or name:find("shot") then
+                    if key == "MaxDistance" or key == "Range" or key == "Distance" or key == "Lifetime" then
+                        return customDist
+                    end
+                end
+            end
+        end
+        
+        return result
+    end)
+    
+    -- METHOD 3: Hook __newindex to prevent distance from being set
+    mt.__newindex = newcclosure(function(self, key, value)
+        if not checkcaller() then
+            if type(self) == "userdata" and typeof(self) == "Instance" then
+                local name = tostring(self):lower()
+                if name:find("bullet") or name:find("projectile") or name:find("shot") then
+                    if key == "MaxDistance" or key == "Range" or key == "Distance" or key == "Lifetime" then
+                        value = customDist
+                    end
+                end
+            end
+        end
+        
+        return oldnewindex(self, key, value)
+    end)
+    
     setreadonly(mt, true)
 end
 
--- Hook workspace bullets
+-- METHOD 4: Hook workspace bullets and modify them
 local function HookBulletObjects()
     if not cfg['bullet distance']['enabled'] then return end
     
+    local customDist = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
+    
     local function modifyBullet(bullet)
-        if not bullet:IsA("BasePart") then return end
+        if not bullet or not bullet.Parent then return end
+        if not bullet:IsA("BasePart") and not bullet:IsA("Attachment") then return end
         
         local name = bullet.Name:lower()
-        if not (name:find("bullet") or name:find("projectile") or name:find("shot")) then return end
+        local parentName = bullet.Parent and bullet.Parent.Name:lower() or ""
         
-        task.spawn(function()
-            local startTime = tick()
-            local maxTime = cfg['bullet distance']['infinite'] and math.huge or 30
+        if name:find("bullet") or name:find("projectile") or name:find("shot") or 
+           parentName:find("bullet") or parentName:find("projectile") or parentName:find("shot") then
             
-            while bullet and bullet.Parent and (tick() - startTime) < maxTime do
-                -- Keep bullet alive and maintain velocity
-                if cfg['bullet distance']['infinite'] then
-                    -- Prevent bullet from slowing down
-                    local bodyVelocity = bullet:FindFirstChildOfClass("BodyVelocity")
-                    if bodyVelocity then
-                        if bodyVelocity.Velocity.Magnitude < 500 then
-                            bodyVelocity.Velocity = bodyVelocity.Velocity.Unit * 1000
-                        end
-                    end
-                    
-                    -- Prevent bullet from being destroyed
-                    bullet.CanCollide = false
-                    
-                    -- Remove any destroy scripts
-                    for _, child in pairs(bullet:GetChildren()) do
-                        if child:IsA("Script") or child:IsA("LocalScript") then
-                            child:Destroy()
-                        end
-                    end
-                end
+            task.spawn(function()
+                local startTime = tick()
+                local maxTime = cfg['bullet distance']['infinite'] and 999999 or 30
                 
-                task.wait(0.1)
-            end
-        end)
+                while bullet and bullet.Parent and (tick() - startTime) < maxTime do
+                    pcall(function()
+                        -- Modify all distance-related properties
+                        if bullet:FindFirstChild("MaxDistance") then
+                            bullet.MaxDistance = customDist
+                        end
+                        if bullet:FindFirstChild("Range") then
+                            bullet.Range = customDist
+                        end
+                        if bullet:FindFirstChild("Distance") then
+                            bullet.Distance = customDist
+                        end
+                        if bullet:FindFirstChild("Lifetime") then
+                            bullet.Lifetime = customDist
+                        end
+                        
+                        -- Keep bullet alive
+                        bullet.CanCollide = false
+                        
+                        -- Maintain velocity
+                        local bodyVelocity = bullet:FindFirstChildOfClass("BodyVelocity")
+                        if bodyVelocity then
+                            if bodyVelocity.Velocity.Magnitude < 500 then
+                                bodyVelocity.Velocity = bodyVelocity.Velocity.Unit * 1000
+                            end
+                            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                        end
+                        
+                        local linearVelocity = bullet:FindFirstChildOfClass("LinearVelocity")
+                        if linearVelocity then
+                            if linearVelocity.VectorVelocity.Magnitude < 500 then
+                                linearVelocity.VectorVelocity = linearVelocity.VectorVelocity.Unit * 1000
+                            end
+                            linearVelocity.MaxForce = math.huge
+                        end
+                        
+                        -- Remove destroy scripts
+                        for _, child in pairs(bullet:GetChildren()) do
+                            if child:IsA("Script") or child:IsA("LocalScript") then
+                                child:Destroy()
+                            end
+                        end
+                        
+                        -- Prevent Debris service from destroying it
+                        game:GetService("Debris"):ClearAllChildren()
+                    end)
+                    
+                    task.wait(0.05)
+                end
+            end)
+        end
     end
     
-    -- Monitor workspace for new bullets
+    -- Monitor workspace
     Workspace.DescendantAdded:Connect(function(descendant)
         if cfg['bullet distance']['enabled'] then
             modifyBullet(descendant)
         end
     end)
     
-    -- Check existing objects
+    -- Check existing
     for _, descendant in pairs(Workspace:GetDescendants()) do
         modifyBullet(descendant)
+    end
+end
+
+-- METHOD 5: Hook Debris service to prevent bullet cleanup
+local function HookDebrisService()
+    if not cfg['bullet distance']['enabled'] then return end
+    
+    local Debris = game:GetService("Debris")
+    local oldAddItem = Debris.AddItem
+    
+    Debris.AddItem = function(self, item, lifetime)
+        if item and item:IsA("BasePart") then
+            local name = item.Name:lower()
+            if name:find("bullet") or name:find("projectile") or name:find("shot") then
+                if cfg['bullet distance']['infinite'] then
+                    lifetime = math.huge
+                else
+                    lifetime = math.max(lifetime, cfg['bullet distance']['custom distance'] / 100)
+                end
+            end
+        end
+        return oldAddItem(self, item, lifetime)
+    end
+end
+
+-- METHOD 6: Hook Tool activation to modify gun properties
+local function HookGunTools()
+    if not cfg['bullet distance']['enabled'] then return end
+    
+    local customDist = cfg['bullet distance']['infinite'] and math.huge or cfg['bullet distance']['custom distance']
+    
+    local function modifyTool(tool)
+        if not tool:IsA("Tool") then return end
+        
+        task.spawn(function()
+            for _, child in pairs(tool:GetDescendants()) do
+                pcall(function()
+                    if child:IsA("NumberValue") or child:IsA("IntValue") then
+                        local name = child.Name:lower()
+                        if name:find("range") or name:find("distance") or name:find("maxdist") then
+                            child.Value = customDist
+                            
+                            child:GetPropertyChangedSignal("Value"):Connect(function()
+                                if child.Value ~= customDist then
+                                    child.Value = customDist
+                                end
+                            end)
+                        end
+                    end
+                end)
+            end
+        end)
+    end
+    
+    LocalPlayer.Character.ChildAdded:Connect(function(child)
+        if cfg['bullet distance']['enabled'] then
+            modifyTool(child)
+        end
+    end)
+    
+    if LocalPlayer.Character then
+        for _, child in pairs(LocalPlayer.Character:GetChildren()) do
+            modifyTool(child)
+        end
+    end
+    
+    LocalPlayer.Backpack.ChildAdded:Connect(function(child)
+        if cfg['bullet distance']['enabled'] then
+            modifyTool(child)
+        end
+    end)
+    
+    for _, child in pairs(LocalPlayer.Backpack:GetChildren()) do
+        modifyTool(child)
     end
 end
 
@@ -1610,4 +1737,6 @@ end
 if cfg['bullet distance'] and cfg['bullet distance']['enabled'] then
     ModifyBulletDistance()
     HookBulletObjects()
+    HookDebrisService()
+    HookGunTools()
 end
