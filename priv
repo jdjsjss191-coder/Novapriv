@@ -33,6 +33,92 @@ end)
 print("Sniper DB hook installed! (Spread: " .. cfg['sniper db']['spread amount'] .. "%)")
 
 -- ============================================================================
+-- BULLET DISTANCE EXTENDER
+-- ============================================================================
+
+local function ExtendBulletDistance()
+    if not cfg['bullet distance']['enabled'] then return end
+    
+    local multiplier = cfg['bullet distance']['multiplier']
+    
+    -- Hook workspace to modify bullet particles/projectiles
+    local oldDescendantAdded = workspace.DescendantAdded
+    workspace.DescendantAdded:Connect(function(obj)
+        if not cfg['bullet distance']['enabled'] then return end
+        
+        -- Detect bullet objects (common names in gun games)
+        if obj:IsA("Part") or obj:IsA("Attachment") or obj:IsA("ParticleEmitter") then
+            local name = obj.Name:lower()
+            
+            -- Check if it's a bullet-related object
+            if name:find("bullet") or name:find("projectile") or name:find("shot") or 
+               name:find("tracer") or name:find("beam") or obj.Parent and 
+               (obj.Parent.Name:find("bullet") or obj.Parent.Name:find("projectile")) then
+                
+                -- Extend velocity if it's a physical bullet
+                if obj:IsA("Part") then
+                    task.spawn(function()
+                        task.wait(0.01) -- Small delay to let bullet initialize
+                        
+                        if obj and obj.Parent then
+                            local bodyVelocity = obj:FindFirstChildOfClass("BodyVelocity")
+                            local bodyForce = obj:FindFirstChildOfClass("BodyForce")
+                            
+                            if bodyVelocity then
+                                bodyVelocity.Velocity = bodyVelocity.Velocity * multiplier
+                            end
+                            
+                            if obj.AssemblyLinearVelocity then
+                                obj.AssemblyLinearVelocity = obj.AssemblyLinearVelocity * multiplier
+                            end
+                            
+                            -- Extend bullet lifetime
+                            if obj:FindFirstChild("Lifetime") then
+                                obj.Lifetime.Value = obj.Lifetime.Value * multiplier
+                            end
+                        end
+                    end)
+                end
+                
+                -- Extend particle emitter range
+                if obj:IsA("ParticleEmitter") then
+                    task.spawn(function()
+                        task.wait(0.01)
+                        if obj and obj.Parent then
+                            obj.Lifetime = NumberRange.new(
+                                obj.Lifetime.Min * multiplier,
+                                obj.Lifetime.Max * multiplier
+                            )
+                            obj.Speed = NumberRange.new(
+                                obj.Speed.Min * multiplier,
+                                obj.Speed.Max * multiplier
+                            )
+                        end
+                    end)
+                end
+            end
+        end
+        
+        -- Hook beams (laser/tracer bullets)
+        if obj:IsA("Beam") then
+            task.spawn(function()
+                task.wait(0.01)
+                if obj and obj.Parent then
+                    -- Extend beam range
+                    obj.Width0 = obj.Width0 * 1.2
+                    obj.Width1 = obj.Width1 * 1.2
+                end
+            end)
+        end
+    end)
+    
+    print("Bullet Distance Extender: Enabled (Multiplier: " .. multiplier .. "x)")
+end
+
+-- Initialize bullet distance extender
+ExtendBulletDistance()
+
+-- ============================================================================
 -- HITBOX EXPANDER
 -- ============================================================================
 
