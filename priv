@@ -1,8 +1,17 @@
 -- Nova Silent Aim - Working Version
 print("Loading Nova Silent Aim...")
 
--- Wait for config
-repeat task.wait() until shared.Nova
+-- Wait for config with timeout
+local timeout = 0
+repeat 
+    task.wait(0.1)
+    timeout = timeout + 0.1
+    if timeout > 5 then
+        warn("Config timeout! Make sure config.lua is loaded first.")
+        return
+    end
+until shared.Nova
+
 local cfg = shared.Nova
 print("Config loaded!")
 
@@ -999,22 +1008,23 @@ local function AddESP(player)
         nametag = Drawing.new("Text"),
     }
     
-    -- Font mapping
+    -- Font mapping - properly use config font
     local fontMap = {
-        ['Plex'] = Drawing.Fonts.Plex,
-        ['Monospace'] = Drawing.Fonts.Monospace,
-        ['UI'] = Drawing.Fonts.UI,
-        ['System'] = Drawing.Fonts.System
+        ['Plex'] = 3,  -- Drawing.Fonts.Plex
+        ['Monospace'] = 2,  -- Drawing.Fonts.Monospace
+        ['UI'] = 1,  -- Drawing.Fonts.UI
+        ['System'] = 0  -- Drawing.Fonts.System
     }
     
-    esp.nametag.Size = 14
+    esp.nametag.Size = 16  -- Larger size for bold appearance
     esp.nametag.Center = true
     esp.nametag.Outline = true
     esp.nametag.OutlineColor = Color3.fromRGB(0, 0, 0)
     esp.nametag.Color = cfg['esp']['color']
-    esp.nametag.Font = fontMap[cfg['esp']['font']] or Drawing.Fonts.Plex
+    esp.nametag.Font = fontMap[cfg['esp']['font']] or 3  -- Use config font or default to Plex
     esp.nametag.Visible = false
     esp.nametag.ZIndex = 1000
+    esp.nametag.Transparency = 1  -- Full opacity
     
     ESPLabels[player.UserId] = esp
 end
