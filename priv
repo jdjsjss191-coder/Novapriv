@@ -1008,23 +1008,25 @@ local function AddESP(player)
         nametag = Drawing.new("Text"),
     }
     
-    -- Font mapping - properly use config font
-    local fontMap = {
-        ['Plex'] = 3,  -- Drawing.Fonts.Plex
-        ['Monospace'] = 2,  -- Drawing.Fonts.Monospace
-        ['UI'] = 1,  -- Drawing.Fonts.UI
-        ['System'] = 0  -- Drawing.Fonts.System
-    }
-    
-    esp.nametag.Size = 16  -- Larger size for bold appearance
+    esp.nametag.Size = 18  -- Larger size
     esp.nametag.Center = true
     esp.nametag.Outline = true
     esp.nametag.OutlineColor = Color3.fromRGB(0, 0, 0)
     esp.nametag.Color = cfg['esp']['color']
-    esp.nametag.Font = fontMap[cfg['esp']['font']] or 3  -- Use config font or default to Plex
+    
+    -- Set font based on config
+    if cfg['esp']['font'] == 'Monospace' then
+        esp.nametag.Font = 2
+    elseif cfg['esp']['font'] == 'UI' then
+        esp.nametag.Font = 1
+    elseif cfg['esp']['font'] == 'System' then
+        esp.nametag.Font = 0
+    else -- Plex or default
+        esp.nametag.Font = 3
+    end
+    
     esp.nametag.Visible = false
     esp.nametag.ZIndex = 1000
-    esp.nametag.Transparency = 1  -- Full opacity
     
     ESPLabels[player.UserId] = esp
 end
