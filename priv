@@ -16,6 +16,16 @@ local cfg = shared.Nova
 print("Config loaded!")
 
 -- ============================================================================
+-- SKIN CHANGER SYSTEM
+-- ============================================================================
+
+local function getSkinForTool(toolName)
+    if not cfg['skinchanger']['enabled'] then return nil end
+    local skin = cfg['skinchanger'][toolName]
+    return (skin and skin ~= "") and skin or nil
+end
+
+-- ============================================================================
 -- SNIPER DB (NO SPREAD) HOOK
 -- ============================================================================
 
@@ -1504,4 +1514,356 @@ task.spawn(SilentAimTargetLoop)
 if cfg['rapid fire'] and cfg['rapid fire']['enabled'] then
     StartRapidFire()
     print("Rapid Fire: Enabled (100 shots/sec)")
+end
+
+
+-- ============================================================================
+-- SKIN CHANGER IMPLEMENTATION
+-- ============================================================================
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local knifeData = {}
+
+local knifeSkins = {
+    ["Golden Age Tanto"] = {soundid = "rbxassetid://5917819099", animationid = "rbxassetid://13473404819", positionoffset = Vector3.new(0, -0.20, -1.2), rotationoffset = Vector3.new(90, 263.7, 180)},
+    ["GPO-Knife"] = {soundid = "rbxassetid://4604390759", animationid = "rbxassetid://14014278925", positionoffset = Vector3.new(0.00, -0.32, -1.07), rotationoffset = Vector3.new(90, -97.4, 90)},
+    ["Heaven"] = {soundid = "rbxassetid://14489860007", animationid = "rbxassetid://14500266726", positionoffset = Vector3.new(-0.02, -0.82, 0.20), rotationoffset = Vector3.new(64.42, 3.79, 0.00)},
+    ["Love Kukri"] = {soundid = "", animationid = "", positionoffset = Vector3.new(-0.14, 0.14, -1.62), rotationoffset = Vector3.new(-90.00, 180.00, -4.97), particle = true, textureid = "rbxassetid://12124159284"},
+    ["Purple Dagger"] = {soundid = "rbxassetid://17822743153", animationid = "rbxassetid://17824999722", positionoffset = Vector3.new(-0.13, -0.24, -1.80), rotationoffset = Vector3.new(89.05, 96.63, 180.00)},
+    ["Dragon"] = {soundid = "rbxassetid://14217789230", animationid = "rbxassetid://14217804400", positionoffset = Vector3.new(-0.02, -0.32, -0.98), rotationoffset = Vector3.new(89.05, 90.95, 180.00)},
+    ["Void"] = {soundid = "rbxassetid://14756591763", animationid = "rbxassetid://14774699952", positionoffset = Vector3.new(-0.02, -0.22, -0.85), rotationoffset = Vector3.new(180.00, 90.95, 180.00)},
+    ["Emerald"] = {soundid = "", animationid = "", positionoffset = Vector3.new(-0.03, -0.06, -0.92), rotationoffset = Vector3.new(168.63, 90.00, 108.00)},
+}
+
+local function clearMesh(tool, exclude)
+    for _, v in ipairs(tool:GetChildren()) do
+        if v:IsA("MeshPart") and v ~= exclude then
+            v:Destroy()
+        end
+    end
+end
+
+local function applyBat(tool, skinName)
+    local mesh = nil
+    for _, v in ipairs(tool:GetDescendants()) do
+        if v:IsA("MeshPart") and v.Transparency == 0 then
+            mesh = v
+            break
+        end
+    end
+    if not mesh then return end
+    
+    local batSkins = ReplicatedStorage:FindFirstChild("SkinModules")
+    if not batSkins then return end
+    batSkins = batSkins:FindFirstChild("Bats")
+    if not batSkins then return end
+    
+    local skin = batSkins:FindFirstChild(skinName)
+    if not skin then return end
+    
+    local clone = skin:Clone()
+    clone.Parent = tool
+    clone.CFrame = mesh.CFrame
+    clone.Name = "CurrentSkin"
+    
+    local weld = Instance.new("Weld")
+    weld.Part0 = clone
+    weld.Part1 = mesh
+    weld.Parent = clone
+    mesh.Transparency = 1
+end
+
+local function applyGun(tool, skinName)
+    local orig = tool:FindFirstChildOfClass("MeshPart")
+    if not orig then return end
+    
+    local skinModules = ReplicatedStorage:FindFirstChild("SkinModules")
+    if not skinModules then return end
+    
+    local success, skinModulesReq = pcall(function()
+        return require(skinModules)
+    end)
+    if not success or not skinModulesReq then return end
+    
+    local info = skinModulesReq[tool.Name] and skinModulesReq[tool.Name][skinName]
+    if not info then return end
+    
+    clearMesh(tool, orig)
+    
+    local skinPart = info.TextureID
+    if typeof(skinPart) == "Instance" then
+        local clone = skinPart:Clone()
+        clone.Parent = tool
+        clone.CFrame = orig.CFrame
+        clone.Name = "CurrentSkin"
+        
+        local weld = Instance.new("Weld")
+        weld.Part0 = clone
+        weld.Part1 = orig
+        weld.C0 = info.CFrame:Inverse()
+        weld.Parent = clone
+        orig.Transparency = 1
+    else
+        orig.TextureID = skinPart
+        orig.Transparency = 0
+    end
+    
+    local handle = tool:FindFirstChild("Handle")
+    if handle then
+        local shoot = handle:FindFirstChild("ShootSound")
+        if shoot then
+            local skinAssets = ReplicatedStorage:FindFirstChild("SkinAssets")
+            if skinAssets then
+                local gunSounds = skinAssets:FindFirstChild("GunShootSounds")
+                if gunSounds then
+                    local sounds = gunSounds:FindFirstChild(tool.Name)
+                    local obj = sounds and sounds:FindFirstChild(skinName)
+                    if obj then
+                        shoot.SoundId = obj.Value
+                    end
+                end
+            end
+        end
+        handle:SetAttribute("SkinName", skinName)
+    end
+end
+
+local function cleanKnife(tool)
+    local data = knifeData[tool]
+    if data then
+        if data.track then
+            data.track:Stop()
+            data.track:Destroy()
+        end
+        if data.welds then
+            for _, w in ipairs(data.welds) do
+                if w then w:Destroy() end
+            end
+        end
+        if data.sounds then
+            for _, s in ipairs(data.sounds) do
+                if s and s.Parent then s:Destroy() end
+            end
+        end
+    end
+    
+    local mesh = tool:FindFirstChild("Default")
+    if mesh then
+        for _, v in ipairs(mesh:GetChildren()) do
+            if v.Name == "Handle.R" or v:IsA("Model") or (v:IsA("BasePart") and v.Name ~= "Default") then
+                v:Destroy()
+            end
+        end
+        mesh.Transparency = 0
+    end
+    knifeData[tool] = nil
+end
+
+local function applyKnife(char, tool, skinName)
+    local skinCfg = knifeSkins[skinName]
+    if not skinCfg then return end
+    
+    local hum = char:FindFirstChild("Humanoid")
+    local rhand = char:FindFirstChild("RightHand")
+    if not hum or not rhand then return end
+    
+    cleanKnife(tool)
+    knifeData[tool] = {track = nil, welds = {}, sounds = {}}
+    local data = knifeData[tool]
+    
+    local mesh = tool:FindFirstChild("Default")
+    if not mesh then return end
+    mesh.Transparency = 1
+    
+    local skinModules = ReplicatedStorage:FindFirstChild("SkinModules")
+    if not skinModules then return end
+    local knives = skinModules:FindFirstChild("Knives")
+    if not knives then return end
+    
+    local skinModel = knives:FindFirstChild(skinName)
+    if not skinModel then return end
+    
+    local clone = skinModel:Clone()
+    clone.Name = skinName
+    
+    local handR = Instance.new("Part")
+    handR.Name = "Handle.R"
+    handR.Transparency = 1
+    handR.CanCollide = false
+    handR.Anchored = false
+    handR.Size = Vector3.new(0.001, 0.001, 0.001)
+    handR.Massless = true
+    handR.Parent = mesh
+    
+    local m6d = Instance.new("Motor6D")
+    m6d.Name = "Handle.R"
+    m6d.Part0 = rhand
+    m6d.Part1 = handR
+    m6d.Parent = handR
+    
+    local offset = CFrame.new(skinCfg.positionoffset) * CFrame.Angles(
+        math.rad(skinCfg.rotationoffset.X),
+        math.rad(skinCfg.rotationoffset.Y),
+        math.rad(skinCfg.rotationoffset.Z)
+    )
+    
+    if clone:IsA("Model") then
+        if not clone.PrimaryPart then
+            for _, c in ipairs(clone:GetChildren()) do
+                if c:IsA("BasePart") then
+                    clone.PrimaryPart = c
+                    break
+                end
+            end
+        end
+        
+        if clone.PrimaryPart then
+            for _, p in ipairs(clone:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.CanCollide = false
+                    p.Massless = true
+                    p.Anchored = false
+                    
+                    local weld = Instance.new("Weld")
+                    weld.Part0 = handR
+                    weld.Part1 = p
+                    weld.C0 = offset
+                    weld.C1 = p.CFrame:ToObjectSpace(clone.PrimaryPart.CFrame)
+                    weld.Parent = p
+                    table.insert(data.welds, weld)
+                end
+            end
+        end
+        clone.Parent = mesh
+    elseif clone:IsA("BasePart") then
+        clone.CanCollide = false
+        clone.Massless = true
+        clone.Anchored = false
+        
+        if clone:IsA("MeshPart") and skinCfg.textureid then
+            clone.TextureID = skinCfg.textureid
+        end
+        
+        clone.Parent = mesh
+        local weld = Instance.new("Weld")
+        weld.Part0 = handR
+        weld.Part1 = clone
+        weld.C0 = offset
+        weld.Parent = clone
+        table.insert(data.welds, weld)
+    end
+    
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = hum
+    end
+    
+    if skinCfg.animationid and skinCfg.animationid ~= "" then
+        local anim = Instance.new("Animation")
+        anim.AnimationId = skinCfg.animationid
+        local track = animator:LoadAnimation(anim)
+        track.Looped = false
+        track:Play()
+        data.track = track
+        anim:Destroy()
+    end
+    
+    if skinCfg.soundid and skinCfg.soundid ~= "" then
+        local snd = Instance.new("Sound")
+        snd.SoundId = skinCfg.soundid
+        snd.Parent = workspace
+        snd:Play()
+        table.insert(data.sounds, snd)
+        snd.Ended:Connect(function()
+            snd:Destroy()
+        end)
+    end
+    
+    tool:SetAttribute("CurrentKnifeSkin", skinName)
+end
+
+local function setupTool(tool)
+    if not tool:IsA("Tool") then return end
+    if tool:GetAttribute("SkinSetup") then return end
+    tool:SetAttribute("SkinSetup", true)
+    
+    tool.Equipped:Connect(function()
+        local char = tool.Parent
+        if char ~= LocalPlayer.Character then return end
+        
+        local skinName = getSkinForTool(tool.Name)
+        if not skinName then return end
+        
+        if tool.Name == "[Knife]" then
+            applyKnife(char, tool, skinName)
+        elseif tool.Name == "[Bat]" then
+            applyBat(tool, skinName)
+        else
+            applyGun(tool, skinName)
+        end
+    end)
+    
+    tool.Unequipped:Connect(function()
+        if tool.Name == "[Knife]" then
+            cleanKnife(tool)
+        end
+    end)
+    
+    if tool.Parent == LocalPlayer.Character then
+        local skinName = getSkinForTool(tool.Name)
+        if skinName then
+            task.spawn(function()
+                if tool.Name == "[Knife]" then
+                    applyKnife(LocalPlayer.Character, tool, skinName)
+                elseif tool.Name == "[Bat]" then
+                    applyBat(tool, skinName)
+                else
+                    applyGun(tool, skinName)
+                end
+            end)
+        end
+    end
+end
+
+local function watchCharacter(char)
+    if not char then return end
+    
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Tool") then
+            setupTool(v)
+        end
+    end
+    
+    char.ChildAdded:Connect(function(v)
+        if v:IsA("Tool") then
+            setupTool(v)
+        end
+    end)
+end
+
+-- Setup skin changer for current character
+if LocalPlayer.Character then
+    watchCharacter(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    watchCharacter(char)
+end)
+
+-- Setup skin changer for backpack tools
+for _, v in ipairs(LocalPlayer.Backpack:GetChildren()) do
+    if v:IsA("Tool") then
+        setupTool(v)
+    end
+end
+
+LocalPlayer.Backpack.ChildAdded:Connect(function(v)
+    if v:IsA("Tool") then
+        setupTool(v)
+    end
+end)
+
+if cfg['skinchanger']['enabled'] then
+    print("Skin Changer: Enabled")
 end
