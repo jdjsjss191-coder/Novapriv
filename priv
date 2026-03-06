@@ -22,6 +22,21 @@ print("Config loaded!")
 local function getSkinForTool(toolName)
     if not cfg['skinchanger']['enabled'] then return nil end
     local skin = cfg['skinchanger'][toolName]
+    
+    -- Validate revolver skins
+    if toolName == "[Revolver]" and skin and skin ~= "" then
+        local isValid = false
+        for _, validSkin in ipairs(revolverSkinsReference) do
+            if validSkin == skin then
+                isValid = true
+                break
+            end
+        end
+        if not isValid then
+            warn("Invalid Revolver skin: '" .. skin .. "' - Check SKINS_REFERENCE.txt for valid names")
+        end
+    end
+    
     return (skin and skin ~= "") and skin or nil
 end
 
@@ -1197,6 +1212,58 @@ end
 
 setreadonly(grm, true)
 
+-- ============================================================================
+-- BULLET DISTANCE REMOTE EXTENDER (hitscan support)
+-- ============================================================================
+
+local oldnamecall = grm.__namecall
+setreadonly(grm, false)
+
+grm.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+
+    if not checkcaller()
+        and method == "FireServer"
+        and cfg['bullet distance']
+        and cfg['bullet distance']['enabled']
+        and cfg['bullet distance']['multiplier'] ~= nil then
+
+        local multiplier = cfg['bullet distance']['multiplier']
+        if type(multiplier) ~= "number" or multiplier <= 1 then
+            return oldnamecall(self, ...)
+        end
+
+        local isInstance = typeof(self) == "Instance"
+        local instType = isInstance and self.ClassName or ""
+        local name = isInstance and self.Name:lower() or ""
+
+        -- Only touch likely gun remotes so we don't break other code
+        if instType == "RemoteEvent"
+            and (name:find("shoot") or name:find("fire") or name:find("bullet")
+                 or name:find("ray") or name:find("projectile")) then
+
+            for i, v in ipairs(args) do
+                local vtype = typeof(v)
+                if vtype == "Ray" then
+                    args[i] = Ray.new(v.Origin, v.Direction * multiplier)
+                elseif vtype == "Vector3" then
+                    args[i] = v * multiplier
+                elseif vtype == "number" and i > 1 then
+                    -- Many frameworks pass a numeric max-distance argument
+                    args[i] = v * multiplier
+                end
+            end
+
+            return oldnamecall(self, table.unpack(args))
+        end
+    end
+
+    return oldnamecall(self, ...)
+end)
+
+setreadonly(grm, true)
+
 print("Silent aim hook installed! (360° mode - shoots anywhere)")
 
 -- ============================================================================
@@ -1523,6 +1590,24 @@ end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local knifeData = {}
+
+-- Revolver Skins Reference (for validation/reference only - actual skins loaded from game)
+local revolverSkinsReference = {
+    "Jungle Blaster", "Electric", "Snow Wrap", "Viper", "Red Hot", "Halloween23", "Blaze", "Ruby",
+    "Biohazard", "White Stripes", "Inferno", "Sushi", "Iced Out", "Portal", "Valentine", "Chrome",
+    "SoulII", "Kitty", "Emerald", "CandyCane", "Venom", "Glassy", "DH-Stars II", "Heaven",
+    "Purple Yellow Wrap", "Skull", "Water", "Black & White", "Aqua", "Icey", "VIP", "Shrimp",
+    "Wild West", "ShortCake", "Soul", "Love", "Gold Glory", "XMAS", "Christmas Wrap", "Heavenly",
+    "Grumpy", "XMAS24", "Toy", "Wrapped", "Premium Yellow", "Wire", "Reptile", "Golden Age",
+    "Unicorn", "Danger", "Cat", "Metal", "Skeleton", "Penguin", "Beary", "Red Skull", "Duck",
+    "Cupid", "PrestigeCandyCane", "Web-Hero III", "Military", "Shader", "Ninja", "Hoodmas",
+    "Red Death", "Etheral", "8-BIT", "Mystical", "Butterfly", "Candy", "Spooky", "Battleworn Lilac",
+    "Shadow", "Crimson", "Void", "DH-Verified", "Stars", "Red Tiger", "Web-Hero II", "Nightmare",
+    "Arcade", "Tact", "Web-Hero", "Battleworn Purple", "Battleworn Red", "Blossom", "Dragon",
+    "Galactic", "Luck", "Testing", "Undead", "Battleworn Yellowish", "Battleworn Pink", "Thunder II",
+    "Future", "Matrix", "Galaxy", "Raygun", "Rainbow", "Devil", "1984", "Pink Fuchsia", "Blue Wrap",
+    "Spectre", "Premium Red", "Gothic", "Patriot", "Battleworn Green", "Cartoon", "Ice"
+}
 
 local knifeSkins = {
     ["Golden Age Tanto"] = {soundid = "rbxassetid://5917819099", animationid = "rbxassetid://13473404819", positionoffset = Vector3.new(0, -0.20, -1.2), rotationoffset = Vector3.new(90, 263.7, 180)},
@@ -1867,3 +1952,60 @@ end)
 if cfg['skinchanger']['enabled'] then
     print("Skin Changer: Enabled")
 end
+
+
+-- ============================================================================
+-- SKIN LISTER (Debug Helper)
+-- ============================================================================
+
+local function listAllAvailableSkins()
+    print("\n========== AVAILABLE SKINS ==========")
+    
+    -- List Knife Skins
+    print("\n[KNIFE SKINS]")
+    for skinName, _ in pairs(knifeSkins) do
+        print("  - " .. skinName)
+    end
+    
+    -- List Gun Skins
+    print("\n[GUN SKINS]")
+    local skinModules = ReplicatedStorage:FindFirstChild("SkinModules")
+    if skinModules then
+        local success, skinData = pcall(function()
+            return require(skinModules)
+        end)
+        
+        if success and skinData then
+            for weaponName, skins in pairs(skinData) do
+                if type(skins) == "table" then
+                    print("\n  " .. weaponName .. ":")
+                    for skinName, _ in pairs(skins) do
+                        print("    - " .. skinName)
+                    end
+                end
+            end
+        else
+            print("  Could not load gun skin data")
+        end
+    else
+        print("  SkinModules not found in ReplicatedStorage")
+    end
+    
+    -- List Bat Skins
+    print("\n[BAT SKINS]")
+    if skinModules then
+        local bats = skinModules:FindFirstChild("Bats")
+        if bats then
+            for _, skin in ipairs(bats:GetChildren()) do
+                print("  - " .. skin.Name)
+            end
+        else
+            print("  Bats folder not found")
+        end
+    end
+    
+    print("\n=====================================\n")
+end
+
+-- Uncomment the line below to print all available skins when the script loads
+-- listAllAvailableSkins()
