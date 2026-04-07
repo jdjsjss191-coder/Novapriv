@@ -429,8 +429,8 @@ do
         local name = options.name
         local accent = options.accent or library.accent
         local outlinecolor = options.outline or { accent, utility.changecolor(accent, -100) }
-        local sizeX = options.sizeX or 550
-        local sizeY = options.sizeY or 350
+        local sizeX = options.sizeX or 580
+        local sizeY = options.sizeY or 420
 
         library.accent = accent
         library.outline = outlinecolor
