@@ -430,7 +430,7 @@ do
         local accent = options.accent or library.accent
         local outlinecolor = options.outline or { accent, utility.changecolor(accent, -100) }
         local sizeX = options.sizeX or 580
-        local sizeY = options.sizeY or 420
+        local sizeY = options.sizeY or 460
 
         library.accent = accent
         library.outline = outlinecolor
