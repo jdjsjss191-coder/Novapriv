@@ -2,28 +2,20 @@
 assert(shared.VyronNew, "[Vyron] Config not found -- run vyronconfig.lua first.")
 local CFG = shared.VyronNew
 
--- ============================================================================
---  CLEANUP FROM PREVIOUS EXECUTION
--- ============================================================================
-if shared.VyronCleanup then
-	pcall(shared.VyronCleanup)
-	shared.VyronCleanup = nil
-end
+if shared.VyronCleanup then pcall(shared.VyronCleanup); shared.VyronCleanup = nil end
 
--- ============================================================================
---  SERVICES / LOCALS
--- ============================================================================
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService       = game:GetService("RunService")
 local Workspace        = game:GetService("Workspace")
 
-local Binds   = CFG['General']['Binds']
-local Checks  = CFG['General']['Checks']
-local SA      = CFG['Silent Aim']
-local ESP_C   = CFG['ESP']
-local SPD_C   = CFG['Speed']
-local BOT_C   = CFG['Bot Targeting']
+local Binds  = CFG['General']['Binds']
+local Checks = CFG['General']['Checks']
+local SA     = CFG['Silent Aim']
+local CL_C   = CFG['Camera Lock']
+local ESP_C  = CFG['ESP']
+local SPD_C  = CFG['Speed']
+local BOT_C  = CFG['Bot Targeting']
 
 local LocalPlayer = Players.LocalPlayer
 repeat task.wait() until LocalPlayer.Character
@@ -35,21 +27,18 @@ local isLocking         = false
 local saWantsLock       = false
 local lastVisibleTarget = nil
 local saLockedPlayer    = nil
-local camLocked = false
-local camTarget  = nil
+local camLocked         = false
+local camTarget         = nil
 local speedEnabled      = false
 local isShutdown        = false
 
--- ============================================================================
---  HELPERS
--- ============================================================================
 local function isPlayerKnockedOrKO(player)
 	if not Checks['Knocked'] then return false end
 	if not player.Character then return false end
 	local be = player.Character:FindFirstChild("BodyEffects")
 	if be then
-		local ko = be:FindFirstChild("K.O");      if ko and ko.Value then return true end
-		local kn = be:FindFirstChild("Knocked");  if kn and kn.Value then return true end
+		local ko = be:FindFirstChild("K.O");     if ko and ko.Value then return true end
+		local kn = be:FindFirstChild("Knocked"); if kn and kn.Value then return true end
 	end
 	return false
 end
@@ -86,8 +75,7 @@ local function canSeeTarget(part)
 	local char = part.Parent
 	rayParams.FilterDescendantsInstances = { LocalPlayer.Character, char }
 	local origin = Camera.CFrame.Position
-	local dir    = (part.Position - origin)
-	local result = Workspace:Raycast(origin, dir, rayParams)
+	local result = Workspace:Raycast(origin, part.Position - origin, rayParams)
 	return result == nil or result.Instance:IsDescendantOf(char)
 end
 
@@ -107,18 +95,18 @@ local function getBodyParts(character)
 end
 
 local function getClosestBodyPart(character)
-	local closestPart, shortestDist = nil, math.huge
+	local best, bd = nil, math.huge
 	local mp = UserInputService:GetMouseLocation()
 	for _, part in pairs(getBodyParts(character)) do
 		if part then
 			local sp, on = Camera:WorldToViewportPoint(part.Position)
 			if on then
 				local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
-				if d < shortestDist then shortestDist = d; closestPart = part end
+				if d < bd then bd = d; best = part end
 			end
 		end
 	end
-	return closestPart
+	return best
 end
 
 local function getPredictedPosition(part)
@@ -127,14 +115,10 @@ local function getPredictedPosition(part)
 	local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
 	if px == 0 and py == 0 and pz == 0 then return part.Position end
 	local vel   = part.AssemblyLinearVelocity
-	local dist  = (part.Position - Camera.CFrame.Position).Magnitude
-	local scale = math.clamp(dist / 100, 0.05, 1)
-	return part.Position + Vector3.new(vel.X * px * scale, vel.Y * py * scale, vel.Z * pz * scale)
+	local scale = math.clamp((part.Position - Camera.CFrame.Position).Magnitude / 100, 0.05, 1)
+	return part.Position + Vector3.new(vel.X*px*scale, vel.Y*py*scale, vel.Z*pz*scale)
 end
 
--- ============================================================================
---  BOT TARGETING
--- ============================================================================
 local BotProxies  = {}
 local botRefreshT = 0
 
@@ -144,22 +128,16 @@ local function matchesBotPattern(name)
 end
 
 local function makeBotProxy(name)
-	local proxy = {
-		_isBot = true, _model = nil,
-		Name = name, DisplayName = name,
-		UserId = 'bot_' .. name, Parent = Players,
-	}
-	setmetatable(proxy, {
-		__index = function(t, k)
-			if k == 'Character' then
-				local m = t._model
-				if not m or not m.Parent then return nil end
-				local hum = m:FindFirstChildOfClass('Humanoid')
-				if hum and hum.Health <= 0 then return nil end
-				return m
-			end
+	local proxy = { _isBot=true, _model=nil, Name=name, DisplayName=name, UserId='bot_'..name, Parent=Players }
+	setmetatable(proxy, { __index = function(t, k)
+		if k == 'Character' then
+			local m = t._model
+			if not m or not m.Parent then return nil end
+			local hum = m:FindFirstChildOfClass('Humanoid')
+			if hum and hum.Health <= 0 then return nil end
+			return m
 		end
-	})
+	end })
 	return proxy
 end
 
@@ -168,636 +146,42 @@ local function refreshBotProxies()
 	local seen = {}
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if obj:IsA('Model') and matchesBotPattern(obj.Name)
-			and obj:FindFirstChildOfClass('Humanoid')
-			and obj:FindFirstChild('HumanoidRootPart') then
+			and obj:FindFirstChildOfClass('Humanoid') and obj:FindFirstChild('HumanoidRootPart') then
 			seen[obj.Name] = obj
 			if not BotProxies[obj.Name] then BotProxies[obj.Name] = makeBotProxy(obj.Name) end
 			BotProxies[obj.Name]._model = obj
 		end
 	end
-	for name in pairs(BotProxies) do
-		if not seen[name] then BotProxies[name] = nil end
-	end
+	for name in pairs(BotProxies) do if not seen[name] then BotProxies[name] = nil end end
 end
 
 RunService.Heartbeat:Connect(function()
 	if isShutdown then return end
 	if tick() - botRefreshT < 2 then return end
-	botRefreshT = tick()
-	refreshBotProxies()
+	botRefreshT = tick(); refreshBotProxies()
 end)
 
 local function getAllTargets()
-	local targets = {}
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer then targets[#targets+1] = p end
-	end
-	for _, proxy in pairs(BotProxies) do targets[#targets+1] = proxy end
-	return targets
+	local t = {}
+	for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then t[#t+1] = p end end
+	for _, proxy in pairs(BotProxies) do t[#t+1] = proxy end
+	return t
 end
 
 local function isBotDead(proxy)
-	local char = proxy.Character
-	if not char then return true end
+	local char = proxy.Character; if not char then return true end
 	local hum = char:FindFirstChildOfClass('Humanoid')
 	return hum and hum.Health <= 0
 end
 
--- ============================================================================
---  TARGET FINDING
--- ============================================================================
-local function findClosestTarget()
-	if isHoldingKnife() then return nil end
-	local closestTarget, shortestDist = nil, math.huge
-	local mp       = UserInputService:GetMouseLocation()
-	local saFov    = SA['FOV']
-	local fovLimit = (saFov['Enabled'] and saFov['Size']) or math.huge
-	local distCfg  = SA['Distance Check']
-	local maxDist  = (distCfg and distCfg['Enabled'] and distCfg['Max']) or math.huge
-	local camPos   = Camera.CFrame.Position
-
-	for _, target in ipairs(getAllTargets()) do
-		local isBot = type(target) == 'table' and target._isBot
-		if not isBot and isBlacklisted(target) then continue end
-		local char = target.Character
-		if not char or not char:FindFirstChild('HumanoidRootPart') then continue end
-		local skip = isBot and isBotDead(target) or (not isBot and isPlayerKnockedOrKO(target))
-		if skip then continue end
-		local hrp = char:FindFirstChild('HumanoidRootPart')
-		if hrp and (hrp.Position - camPos).Magnitude > maxDist then continue end
-		for _, part in pairs(getBodyParts(char)) do
-			if part and canSeeTarget(part) then
-				local sp, on = Camera:WorldToViewportPoint(part.Position)
-				if on then
-					local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
-					if d < shortestDist and d <= fovLimit then
-						shortestDist = d; closestTarget = part
-					end
-				end
-			end
-		end
-	end
-	return closestTarget
-end
-
--- ============================================================================
---  SILENT AIM  (Mouse.Hit / Mouse.Target hook)
--- ============================================================================
-local grm      = getrawmetatable(game)
-local oldIndex = grm.__index
-setreadonly(grm, false)
-
-local currentPlaceId = game.PlaceId
-local isPrisonWars   = currentPlaceId == 155615604
-local isArsenal      = currentPlaceId == 286090429
-local oldNamecall    = grm.__namecall
-
-if isPrisonWars or isArsenal then
-	-- Automatic raycast-based silent aim for Prison Wars / Arsenal
-	local closesthitpart = nil
-
-	local function getclosestplayer()
-		local closestpart, closestdist = nil, math.huge
-		local mp       = UserInputService:GetMouseLocation()
-		local saFov    = SA['FOV']
-		local fovLimit = (saFov['Enabled'] and saFov['Size']) or math.huge
-		for _, player in pairs(Players:GetPlayers()) do
-			if player == LocalPlayer or not player.Character then continue end
-			if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then continue end
-			local bodyPart = player.Character:FindFirstChild("UpperTorso")
-				or player.Character:FindFirstChild("Torso")
-			local hum = player.Character:FindFirstChild("Humanoid")
-			if not bodyPart or not hum or hum.Health <= 0 then continue end
-			local sp, on = Camera:WorldToViewportPoint(bodyPart.Position)
-			if on then
-				local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
-				if d < closestdist and d <= fovLimit then
-					closestdist = d; closestpart = bodyPart
-				end
-			end
-		end
-		return closestpart
-	end
-
-	RunService.Heartbeat:Connect(function()
-		if SA and SA['Enabled'] then
-			closesthitpart = getclosestplayer()
-		end
-	end)
-
-	grm.__namecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-		local method, args = getnamecallmethod(), {...}
-		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
-			local hitpart = closesthitpart
-			if hitpart and SA and SA['Enabled'] then
-				local origin = args[2]
-				local dir    = (hitpart.Position - origin).Unit * 1000
-				args[2], args[3] = origin, dir
-				return oldNamecall(table.unpack(args))
-			end
-		end
-		return oldNamecall(...)
-	end))
-else
-	-- Default: Mouse.Hit / Mouse.Target hook
-	grm.__index = function(self, key)
-		if not checkcaller() and self == Mouse and SA and SA['Enabled'] then
-			if key == "Hit" or key == "Target" then
-				if isHoldingKnife() then return oldIndex(self, key) end
-				if not currentTarget then return oldIndex(self, key) end
-				local char = currentTarget.Parent
-				if not char then return oldIndex(self, key) end
-				local realPlayer = Players:GetPlayerFromCharacter(char)
-				if realPlayer then
-					if isPlayerKnockedOrKO(realPlayer) then return oldIndex(self, key) end
-				else
-					local hum = char:FindFirstChildOfClass('Humanoid')
-					if not hum or hum.Health <= 0 then return oldIndex(self, key) end
-				end
-				if not canSeeTarget(currentTarget) then return oldIndex(self, key) end
-				local hp      = SA['Hit Part']
-				local aimPart = (hp == 'Closest Part') and currentTarget
-				              or (char:FindFirstChild(hp) or currentTarget)
-				if key == "Target" then return aimPart end
-				return CFrame.new(getPredictedPosition(aimPart))
-			end
-		end
-		return oldIndex(self, key)
-	end
-end
-
-setreadonly(grm, true)
-
--- ============================================================================
---  NAME ESP
--- ============================================================================
-local espLabels = {}
-local espGui    = Instance.new("ScreenGui")
-espGui.Name           = "VyronESP"
-espGui.ResetOnSpawn   = false
-espGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-espGui.IgnoreGuiInset = true
-pcall(function() espGui.Parent = game:GetService("CoreGui") end)
-if not espGui.Parent then espGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
-
-local function makeTag()
-	local NT  = ESP_C['Nametag'] or {}
-	local lbl = Instance.new("TextLabel", espGui)
-	lbl.BackgroundTransparency = 1
-	lbl.Size                   = UDim2.new(0, 200, 0, 20)
-	lbl.AnchorPoint            = Vector2.new(0.5, 0.5)
-	lbl.TextColor3             = NT['Color'] or Color3.fromRGB(220, 220, 220)
-	lbl.TextSize               = NT['Size'] or 8
-	lbl.TextScaled             = false
-	lbl.Font                   = Enum.Font.Legacy
-	lbl.TextStrokeTransparency = 0.5
-	lbl.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
-	lbl.Text                   = ""
-	lbl.Visible                = false
-	lbl.ZIndex                 = 10
-	return lbl
-end
-
-local function addESP(player)
-	if player == LocalPlayer then return end
-	local key = tostring(player.UserId)
-	if espLabels[key] then pcall(function() espLabels[key]:Destroy() end) end
-	espLabels[key] = { player = player, tag = makeTag() }
-end
-
-local function removeESP(player)
-	local key = tostring(player.UserId)
-	local e   = espLabels[key]
-	if e then pcall(function() e.tag:Destroy() end); espLabels[key] = nil end
-end
-
-local function refreshESP()
-	if isShutdown or not ESP_C['Enabled'] then
-		for _, e in pairs(espLabels) do e.tag.Visible = false end
-		return
-	end
-
-	-- seed bots
-	for _, proxy in pairs(BotProxies) do
-		local key = tostring(proxy.UserId)
-		if not espLabels[key] then
-			espLabels[key] = { player = proxy, tag = makeTag() }
-		end
-	end
-
-	for userId, e in pairs(espLabels) do
-		local player = e.player
-		local isBot  = type(player) == 'table' and player._isBot
-
-		if isBot then
-			if not BotProxies[player.Name] then
-				pcall(function() e.tag:Destroy() end)
-				espLabels[userId] = nil; continue
-			end
-		else
-			if not player or not player.Parent then
-				pcall(function() e.tag:Destroy() end)
-				espLabels[userId] = nil; continue
-			end
-			if isBlacklisted(player) then e.tag.Visible = false; continue end
-		end
-
-		local char = player.Character
-		if not char then e.tag.Visible = false; continue end
-		local hum = char:FindFirstChildOfClass("Humanoid")
-		if not hum or hum.Health <= 0 then e.tag.Visible = false; continue end
-		local root = char:FindFirstChild("HumanoidRootPart")
-		if not root then e.tag.Visible = false; continue end
-
-		local feetPos = root.Position - Vector3.new(0, 2.3, 0)
-		local sp, on  = Camera:WorldToViewportPoint(feetPos)
-		if not on or sp.Z <= 0 then e.tag.Visible = false; continue end
-
-		local NT = ESP_C['Nametag'] or {}
-		if not NT['Enabled'] then e.tag.Visible = false; continue end
-
-		local isTarget = (currentTarget ~= nil and currentTarget.Parent == char)
-		             or (camLocked and camTarget ~= nil and camTarget.Parent == char)
-		local nameMode = NT['Mode'] or 'Username'
-		e.tag.Text       = isBot and player.Name
-		                or (nameMode == 'DisplayName' and player.DisplayName)
-		                or player.Name
-		e.tag.TextColor3 = isTarget
-		                and (NT['Target Color'] or ESP_C['Target Color'] or Color3.fromRGB(100,255,100))
-		                or  (NT['Color'] or ESP_C['Color'] or Color3.fromRGB(220,220,220))
-		e.tag.TextSize   = NT['Size'] or 8
-		e.tag.Position   = UDim2.new(0, sp.X, 0, sp.Y + 2)
-		e.tag.Visible    = true
-	end
-end
-
-for _, p in pairs(Players:GetPlayers()) do
-	if p ~= LocalPlayer then
-		addESP(p)
-		p.CharacterAdded:Connect(function() removeESP(p); task.wait(0.15); if p.Parent then addESP(p) end end)
-		p.CharacterRemoving:Connect(function() removeESP(p) end)
-	end
-end
-Players.PlayerAdded:Connect(function(p)
-	task.wait(0.1); addESP(p)
-	p.CharacterAdded:Connect(function() removeESP(p); task.wait(0.15); if p.Parent then addESP(p) end end)
-	p.CharacterRemoving:Connect(function() removeESP(p) end)
-end)
-Players.PlayerRemoving:Connect(removeESP)
-
--- ============================================================================
---  FOV CIRCLE
--- ============================================================================
-local SAFovCircle = Drawing.new("Circle")
-SAFovCircle.Filled       = false
-SAFovCircle.Thickness    = 1
-SAFovCircle.NumSides     = 128
-SAFovCircle.Transparency = 1
-SAFovCircle.Visible      = false
-
-local function updateFOV()
-	local saFov = SA['FOV']
-	if not SA['Enabled'] or not saFov['Enabled'] or not saFov['Visible'] then
-		SAFovCircle.Visible = false; return
-	end
-	local mp = UserInputService:GetMouseLocation()
-	SAFovCircle.Position = Vector2.new(mp.X, mp.Y)
-	SAFovCircle.Radius   = saFov['Size']
-	SAFovCircle.Color    = isLocking
-		and (saFov['Active Color'] or Color3.fromRGB(100,230,130))
-		or  (saFov['Color']        or Color3.fromRGB(255,255,255))
-	SAFovCircle.Visible  = true
-end
-
--- ============================================================================
---  TARGET TRACER
--- ============================================================================
-local tracerLine = Drawing.new("Line")
-tracerLine.Visible      = false
-tracerLine.Thickness    = 1
-tracerLine.Transparency = 1
-tracerLine.ZIndex       = 999
-
-local function updateTracer()
-	local TR = ESP_C['Tracer']
-	if not TR or not TR['Enabled'] then tracerLine.Visible = false; return end
-
-	-- pick active target: camlock takes priority, then silent aim
-	local tracerPart = nil
-	if camLocked and camTarget and camTarget.Parent then
-		local char    = camTarget.Parent
-		local hitPart = CL_C['Hit Part'] or 'HumanoidRootPart'
-		tracerPart    = char:FindFirstChild(hitPart) or camTarget
-	elseif isLocking and currentTarget and currentTarget.Parent then
-		tracerPart = currentTarget
-	end
-
-	if not tracerPart then tracerLine.Visible = false; return end
-
-	local sp, on = Camera:WorldToViewportPoint(tracerPart.Position)
-	if not on or sp.Z <= 0 then tracerLine.Visible = false; return end
-
-	local mp = UserInputService:GetMouseLocation()
-	tracerLine.From         = Vector2.new(mp.X, mp.Y)
-	tracerLine.To           = Vector2.new(sp.X, sp.Y)
-	tracerLine.Thickness    = TR['Thickness']    or 1
-	tracerLine.Transparency = TR['Transparency'] or 1
-	tracerLine.Color        = TR['Color']        or Color3.fromRGB(205, 180, 219)
-	tracerLine.Visible      = true
-end
-
--- ============================================================================
---  SPEED
--- ============================================================================
-local function getHumanoid()
-	local char = LocalPlayer.Character
-	return char and char:FindFirstChildOfClass('Humanoid')
-end
-
-RunService.RenderStepped:Connect(function()
-	if not SPD_C['Enabled'] or not speedEnabled then return end
-	local hum = getHumanoid()
-	if hum then hum.WalkSpeed = SPD_C['Speed'] or 16 end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function(char)
-	char:WaitForChild('Humanoid')
-	if speedEnabled then char.Humanoid.WalkSpeed = SPD_C['Speed'] or 16 end
-end)
-
--- ============================================================================
---  AUTO SHOOT
--- ============================================================================
-local autoShootLastFire = 0
-
-RunService.Heartbeat:Connect(function()
-	if isShutdown then return end
-	local AS = SA and SA['Auto Shoot']
-	if not (AS and AS['Enabled'] and SA['Enabled'] and isLocking and currentTarget and currentTarget.Parent) then return end
-	if isHoldingKnife() then return end
-	local now   = tick()
-	local delay = AS['Delay'] or 0.1
-	if now - autoShootLastFire < delay then return end
-
-	local withinFOV = true
-	if AS['FOV Check'] and SA['FOV'] and SA['FOV']['Enabled'] then
-		local mp = UserInputService:GetMouseLocation()
-		local sp, on = Camera:WorldToViewportPoint(currentTarget.Position)
-		if on and sp.Z > 0 then
-			withinFOV = (Vector2.new(sp.X, sp.Y) - mp).Magnitude <= (SA['FOV']['Size'] or 160)
-		else
-			withinFOV = false
-		end
-	end
-	if not withinFOV then return end
-
-	local canShoot = AS['Mode'] == 'Part' or canSeeTarget(currentTarget)
-	if not canShoot then return end
-
-	local char = LocalPlayer.Character
-	local tool = char and char:FindFirstChildOfClass('Tool')
-	if tool then
-		pcall(function() tool:Activate(); autoShootLastFire = now end)
-	end
-end)
-
--- ============================================================================
---  RENDER LOOP
--- ============================================================================
-RunService.RenderStepped:Connect(function()
-	if isShutdown then return end
-
-	-- AUTOMATIC mode: always lock closest target in FOV
-	if SA['Enabled'] and SA['Target Mode'] == 'Automatic' then
-		if isHoldingKnife() then
-			currentTarget = nil; isLocking = false; lastVisibleTarget = nil
-		else
-			local saFov    = SA['FOV']
-			local fovLimit = (saFov['Enabled'] and saFov['Size']) or math.huge
-			local distCfg  = SA['Distance Check']
-			local maxDist  = (distCfg and distCfg['Enabled'] and distCfg['Max']) or math.huge
-			local camPos   = Camera.CFrame.Position
-			local mp       = UserInputService:GetMouseLocation()
-			local best, bd = nil, math.huge
-
-			for _, target in ipairs(getAllTargets()) do
-				local isBot = type(target) == 'table' and target._isBot
-				if not isBot and isBlacklisted(target) then continue end
-				local char = target.Character
-				if not char or not char:FindFirstChild('HumanoidRootPart') then continue end
-				local skip = isBot and isBotDead(target) or (not isBot and isPlayerKnockedOrKO(target))
-				if skip then continue end
-				local hrp = char:FindFirstChild('HumanoidRootPart')
-				if hrp and (hrp.Position - camPos).Magnitude > maxDist then continue end
-				local sp, on = Camera:WorldToViewportPoint(hrp.Position)
-				if on and sp.Z > 0 then
-					local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
-					if d <= fovLimit and d < bd then bd = d; best = hrp end
-				end
-			end
-
-			if best then
-				local char = best.Parent
-				local hp   = SA['Hit Part']
-				local part = (hp == 'Closest Part') and getClosestBodyPart(char)
-				          or char:FindFirstChild(hp) or best
-				currentTarget = part; isLocking = true; lastVisibleTarget = part
-			else
-				currentTarget = nil; isLocking = false; lastVisibleTarget = nil
-			end
-		end
-	end
-
-	-- TARGET mode: keep tracking locked target
-	if SA['Target Mode'] ~= 'Automatic' and isLocking and currentTarget then
-		local char       = currentTarget.Parent
-		local realPlayer = char and Players:GetPlayerFromCharacter(char)
-		local hum        = char and char:FindFirstChildOfClass('Humanoid')
-		local dead       = not char or (hum and hum.Health <= 0)
-		local knocked    = realPlayer and isPlayerKnockedOrKO(realPlayer)
-		if dead or knocked then
-			if Checks['Respawn Check'] == false and saLockedPlayer then
-				currentTarget = nil; isLocking = false; lastVisibleTarget = nil
-				local lockedP = saLockedPlayer
-				local isBot   = type(lockedP) == 'table' and lockedP._isBot
-				task.spawn(function()
-					local newChar
-					if isBot then
-						repeat task.wait(0.2) until
-							(not saWantsLock or saLockedPlayer ~= lockedP) or
-							(BotProxies[lockedP.Name] and BotProxies[lockedP.Name].Character)
-						newChar = BotProxies[lockedP.Name] and BotProxies[lockedP.Name].Character
-					else
-						newChar = lockedP.CharacterAdded:Wait()
-						newChar:WaitForChild('HumanoidRootPart', 10); task.wait(0.1)
-					end
-					if saWantsLock and saLockedPlayer == lockedP and newChar then
-						local hp   = SA['Hit Part']
-						local part = (hp == 'Closest Part') and getClosestBodyPart(newChar)
-						          or newChar:FindFirstChild(hp)
-						          or newChar:FindFirstChild('HumanoidRootPart')
-						if part then currentTarget = part; lastVisibleTarget = part; isLocking = true end
-					end
-				end)
-			else
-				currentTarget = nil; isLocking = false; saWantsLock = false
-				lastVisibleTarget = nil; saLockedPlayer = nil
-			end
-		else
-			if canSeeTarget(currentTarget) then lastVisibleTarget = currentTarget end
-			local hp = SA['Hit Part']
-			if hp == 'Closest Part' then
-				local newPart = getClosestBodyPart(char)
-				if newPart then currentTarget = newPart end
-			end
-		end
-	end
-
-	-- CAMLOCK automatic targeting (must run before refreshESP so color is correct)
-	if CL_C and CL_C['Enabled'] and CL_C['Target Mode'] == 'Automatic' then
-		if isHoldingKnife() then
-			camLocked = false; camTarget = nil
-		else
-			local best = clFindClosest()
-			if best then camLocked = true; camTarget = best
-			else camLocked = false; camTarget = nil end
-		end
-	end
-
-	updateFOV()
-	updateTracer()
-	refreshESP()
-end)
-
--- ============================================================================
---  RAPID FIRE
--- ============================================================================
-do
-	local isMouseDown = false
-
-	UserInputService.InputBegan:Connect(function(i, gp)
-		if not gp and i.UserInputType == Enum.UserInputType.MouseButton1 then
-			isMouseDown = true
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(i, gp)
-		if not gp and i.UserInputType == Enum.UserInputType.MouseButton1 then
-			isMouseDown = false
-		end
-	end)
-
-	task.spawn(function()
-		while true do
-			local rf = CFG['Rapid Fire']
-			if rf['Enabled'] and isMouseDown and not isHoldingKnife() then
-				local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass('Tool')
-				if tool then
-					local allowed = true
-					if rf['Specific Weapons']['Enabled'] then
-						allowed = false
-						for _, w in ipairs(rf['Specific Weapons']['Weapons']) do
-							local clean = w:gsub('%[',''):gsub('%]','')
-							if tool.Name == w or tool.Name:find(clean, 1, true) then
-								allowed = true; break
-							end
-						end
-					end
-					if allowed then tool:Activate() end
-				end
-			end
-			local cd = rf['Cooldown'] or 0
-			if cd > 0 then task.wait(cd) else task.wait() end
-		end
-	end)
-end
-
--- ============================================================================
---  INFINITE RANGE
--- ============================================================================
-do
-	local IR_C  = CFG['Infinite Range']
-	local PROPS = {'Range', 'MaxRange', 'FireRange', 'Distance', 'MaxDistance', 'BulletRange'}
-
-	local function applyRange()
-		if not IR_C or not IR_C['Enabled'] then return end
-		local char = LocalPlayer.Character
-		local tool = char and char:FindFirstChildOfClass('Tool')
-		if not tool then return end
-		local range = IR_C['Range'] or 900000000
-		for _, prop in ipairs(PROPS) do
-			local v = tool:FindFirstChild(prop)
-			if v and (v:IsA('NumberValue') or v:IsA('IntValue')) then v.Value = range end
-			local gc = tool:FindFirstChild('Configuration') or tool:FindFirstChild('GunConfig')
-			if gc then
-				local r = gc:FindFirstChild(prop)
-				if r and (r:IsA('NumberValue') or r:IsA('IntValue')) then r.Value = range end
-			end
-		end
-	end
-
-	if IR_C and IR_C['Enabled'] then
-		RunService.RenderStepped:Connect(applyRange)
-	end
-end
-
--- ============================================================================
---  SPREAD MODIFIER
--- ============================================================================
-do
-	local SM_C = CFG['Spread Modifier']
-	if SM_C and SM_C['Enabled'] and hookfunction then
-		local oldRandom
-		oldRandom = hookfunction(math.random, function(...)
-			local args = {...}
-			if checkcaller() then return oldRandom(...) end
-			local isSpread = (#args == 0)
-				or (args[1] and args[2] and args[1] < 0 and args[2] > 0 and math.abs(args[1]) <= 0.15)
-			if isSpread then
-				local cfg = CFG['Spread Modifier']
-				if not cfg or not cfg['Enabled'] then return oldRandom(...) end
-				if cfg['Specific Weapons']['Enabled'] then
-					local char = LocalPlayer.Character
-					local tool = char and char:FindFirstChildOfClass('Tool')
-					if not tool then return oldRandom(...) end
-					local found = false
-					for _, w in ipairs(cfg['Specific Weapons']['Weapons']) do
-						local clean = w:gsub('%[',''):gsub('%]',''):lower()
-						if tool.Name:lower():find(clean, 1, true) then found = true; break end
-					end
-					if not found then return oldRandom(...) end
-				end
-				return oldRandom(...) * (cfg['Amount'] or 0)
-			end
-			return oldRandom(...)
-		end)
-	end
-end
-
--- ============================================================================
---  CAMERA LOCK
--- ============================================================================
-local CL_C = CFG['Camera Lock']
-
-local CLFovCircle = Drawing.new("Circle")
-CLFovCircle.Filled       = false
-CLFovCircle.Thickness    = 1
-CLFovCircle.Transparency = 1
-CLFovCircle.NumSides     = 64
-CLFovCircle.Color        = Color3.fromRGB(255, 255, 255)
-CLFovCircle.Visible      = false
-
 local function clIsKnocked(char)
 	if not char then return false end
 	local be = char:FindFirstChild("BodyEffects")
-	if be then
-		local k = be:FindFirstChild("K.O")
-		if k and k.Value then return true end
-	end
+	if be then local k = be:FindFirstChild("K.O"); if k and k.Value then return true end end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then
 		local s = hum:GetState()
-		if s == Enum.HumanoidStateType.Dead
-		or s == Enum.HumanoidStateType.Physics
+		if s == Enum.HumanoidStateType.Dead or s == Enum.HumanoidStateType.Physics
 		or s == Enum.HumanoidStateType.Ragdoll then return true end
 	end
 	return false
@@ -826,98 +210,494 @@ local function clFindClosest()
 	return best
 end
 
-RunService.RenderStepped:Connect(function()
-	if isShutdown or not CL_C['Enabled'] then CLFovCircle.Visible = false; return end
+local function findClosestTarget()
+	if isHoldingKnife() then return nil end
+	local best, bd = nil, math.huge
+	local mp       = UserInputService:GetMouseLocation()
+	local fovLimit = (SA['FOV']['Enabled'] and SA['FOV']['Size']) or math.huge
+	local maxDist  = (SA['Distance Check']['Enabled'] and SA['Distance Check']['Max']) or math.huge
+	local camPos   = Camera.CFrame.Position
+	for _, target in ipairs(getAllTargets()) do
+		local isBot = type(target) == 'table' and target._isBot
+		if not isBot and isBlacklisted(target) then continue end
+		local char = target.Character
+		if not char or not char:FindFirstChild('HumanoidRootPart') then continue end
+		if isBot and isBotDead(target) or (not isBot and isPlayerKnockedOrKO(target)) then continue end
+		local hrp = char:FindFirstChild('HumanoidRootPart')
+		if hrp and (hrp.Position - camPos).Magnitude > maxDist then continue end
+		for _, part in pairs(getBodyParts(char)) do
+			if part and canSeeTarget(part) then
+				local sp, on = Camera:WorldToViewportPoint(part.Position)
+				if on then
+					local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+					if d < bd and d <= fovLimit then bd = d; best = part end
+				end
+			end
+		end
+	end
+	return best
+end
 
-	-- FOV circle
-	local fovCfg = CL_C['FOV'] or {}
-	if fovCfg['Enabled'] and fovCfg['Visible'] then
+local grm      = getrawmetatable(game)
+local oldIndex = grm.__index
+setreadonly(grm, false)
+
+local currentPlaceId = game.PlaceId
+local isPrisonWars   = currentPlaceId == 155615604
+local isArsenal      = currentPlaceId == 286090429
+local oldNamecall    = grm.__namecall
+
+if isPrisonWars or isArsenal then
+	local closesthitpart = nil
+	local function getclosestplayer()
+		local best, bd = nil, math.huge
+		local mp       = UserInputService:GetMouseLocation()
+		local fovLimit = (SA['FOV']['Enabled'] and SA['FOV']['Size']) or math.huge
+		for _, p in pairs(Players:GetPlayers()) do
+			if p == LocalPlayer or not p.Character then continue end
+			if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then continue end
+			local bp  = p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("Torso")
+			local hum = p.Character:FindFirstChild("Humanoid")
+			if not bp or not hum or hum.Health <= 0 then continue end
+			local sp, on = Camera:WorldToViewportPoint(bp.Position)
+			if on then
+				local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+				if d < bd and d <= fovLimit then bd = d; best = bp end
+			end
+		end
+		return best
+	end
+	RunService.Heartbeat:Connect(function()
+		if SA and SA['Enabled'] then closesthitpart = getclosestplayer() end
+	end)
+	grm.__namecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+		local method, args = getnamecallmethod(), {...}
+		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
+			local hp = closesthitpart
+			if hp and SA and SA['Enabled'] then
+				local origin = args[2]
+				args[2], args[3] = origin, (hp.Position - origin).Unit * 1000
+				return oldNamecall(table.unpack(args))
+			end
+		end
+		return oldNamecall(...)
+	end))
+else
+	grm.__index = function(self, key)
+		if not checkcaller() and self == Mouse and SA and SA['Enabled'] then
+			if key == "Hit" or key == "Target" then
+				if isHoldingKnife() or not currentTarget then return oldIndex(self, key) end
+				local char = currentTarget.Parent
+				if not char then return oldIndex(self, key) end
+				local rp = Players:GetPlayerFromCharacter(char)
+				if rp and isPlayerKnockedOrKO(rp) then return oldIndex(self, key) end
+				if not rp then
+					local hum = char:FindFirstChildOfClass('Humanoid')
+					if not hum or hum.Health <= 0 then return oldIndex(self, key) end
+				end
+				if not canSeeTarget(currentTarget) then return oldIndex(self, key) end
+				local hp      = SA['Hit Part']
+				local aimPart = (hp == 'Closest Part') and currentTarget or (char:FindFirstChild(hp) or currentTarget)
+				if key == "Target" then return aimPart end
+				return CFrame.new(getPredictedPosition(aimPart))
+			end
+		end
+		return oldIndex(self, key)
+	end
+end
+
+setreadonly(grm, true)
+
+local espLabels = {}
+local espGui    = Instance.new("ScreenGui")
+espGui.Name = "VyronESP"; espGui.ResetOnSpawn = false
+espGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; espGui.IgnoreGuiInset = true
+pcall(function() espGui.Parent = game:GetService("CoreGui") end)
+if not espGui.Parent then espGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local function makeTag()
+	local NT  = ESP_C['Nametag'] or {}
+	local lbl = Instance.new("TextLabel", espGui)
+	lbl.BackgroundTransparency = 1
+	lbl.Size = UDim2.new(0, 200, 0, 20); lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+	lbl.TextColor3 = NT['Color'] or Color3.fromRGB(220,220,220)
+	lbl.TextSize = NT['Size'] or 8; lbl.TextScaled = false
+	lbl.Font = Enum.Font.Legacy
+	lbl.TextStrokeTransparency = 0.5; lbl.TextStrokeColor3 = Color3.fromRGB(0,0,0)
+	lbl.Text = ""; lbl.Visible = false; lbl.ZIndex = 10
+	return lbl
+end
+
+local function addESP(player)
+	if player == LocalPlayer then return end
+	local key = tostring(player.UserId)
+	if espLabels[key] then pcall(function() espLabels[key].tag:Destroy() end) end
+	espLabels[key] = { player = player, tag = makeTag() }
+end
+
+local function removeESP(player)
+	local key = tostring(player.UserId)
+	local e = espLabels[key]
+	if e then pcall(function() e.tag:Destroy() end); espLabels[key] = nil end
+end
+
+local function refreshESP()
+	if isShutdown or not ESP_C['Enabled'] then
+		for _, e in pairs(espLabels) do e.tag.Visible = false end; return
+	end
+	for _, proxy in pairs(BotProxies) do
+		local key = tostring(proxy.UserId)
+		if not espLabels[key] then espLabels[key] = { player = proxy, tag = makeTag() } end
+	end
+	for userId, e in pairs(espLabels) do
+		local player = e.player
+		local isBot  = type(player) == 'table' and player._isBot
+		if isBot then
+			if not BotProxies[player.Name] then pcall(function() e.tag:Destroy() end); espLabels[userId] = nil; continue end
+		else
+			if not player or not player.Parent then pcall(function() e.tag:Destroy() end); espLabels[userId] = nil; continue end
+			if isBlacklisted(player) then e.tag.Visible = false; continue end
+		end
+		local char = player.Character
+		if not char then e.tag.Visible = false; continue end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hum or hum.Health <= 0 then e.tag.Visible = false; continue end
+		local root = char:FindFirstChild("HumanoidRootPart")
+		if not root then e.tag.Visible = false; continue end
+		local sp, on = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 2.3, 0))
+		if not on or sp.Z <= 0 then e.tag.Visible = false; continue end
+		local NT = ESP_C['Nametag'] or {}
+		if not NT['Enabled'] then e.tag.Visible = false; continue end
+		local isTarget = (currentTarget ~= nil and currentTarget.Parent == char)
+		              or (camLocked and camTarget ~= nil and camTarget.Parent == char)
+		local nameMode = NT['Mode'] or 'Username'
+		e.tag.Text       = isBot and player.Name or (nameMode == 'DisplayName' and player.DisplayName) or player.Name
+		e.tag.TextColor3 = isTarget
+			and (NT['Target Color'] or ESP_C['Target Color'] or Color3.fromRGB(100,255,100))
+			or  (NT['Color']        or ESP_C['Color']        or Color3.fromRGB(220,220,220))
+		e.tag.TextSize = NT['Size'] or 8
+		e.tag.Position = UDim2.new(0, sp.X, 0, sp.Y + 2)
+		e.tag.Visible  = true
+	end
+end
+
+for _, p in pairs(Players:GetPlayers()) do
+	if p ~= LocalPlayer then
+		addESP(p)
+		p.CharacterAdded:Connect(function() removeESP(p); task.wait(0.15); if p.Parent then addESP(p) end end)
+		p.CharacterRemoving:Connect(function() removeESP(p) end)
+	end
+end
+Players.PlayerAdded:Connect(function(p)
+	task.wait(0.1); addESP(p)
+	p.CharacterAdded:Connect(function() removeESP(p); task.wait(0.15); if p.Parent then addESP(p) end end)
+	p.CharacterRemoving:Connect(function() removeESP(p) end)
+end)
+Players.PlayerRemoving:Connect(removeESP)
+
+local SAFovCircle = Drawing.new("Circle")
+SAFovCircle.Filled = false; SAFovCircle.Thickness = 1
+SAFovCircle.NumSides = 128; SAFovCircle.Transparency = 1; SAFovCircle.Visible = false
+
+local function updateFOV()
+	local saFov = SA['FOV']
+	if not SA['Enabled'] or not saFov['Enabled'] or not saFov['Visible'] then
+		SAFovCircle.Visible = false; return
+	end
+	local mp = UserInputService:GetMouseLocation()
+	SAFovCircle.Position = Vector2.new(mp.X, mp.Y)
+	SAFovCircle.Radius   = saFov['Size']
+	SAFovCircle.Color    = isLocking and (saFov['Active Color'] or Color3.fromRGB(100,230,130))
+	                                  or (saFov['Color']        or Color3.fromRGB(255,255,255))
+	SAFovCircle.Visible  = true
+end
+
+local CLFovCircle = Drawing.new("Circle")
+CLFovCircle.Filled = false; CLFovCircle.Thickness = 1
+CLFovCircle.NumSides = 64; CLFovCircle.Transparency = 1; CLFovCircle.Visible = false
+
+local tracerLine = Drawing.new("Line")
+tracerLine.Visible = false; tracerLine.Thickness = 1
+tracerLine.Transparency = 1; tracerLine.ZIndex = 999
+
+local function updateTracer()
+	local TR = ESP_C['Tracer']
+	if not TR or not TR['Enabled'] then tracerLine.Visible = false; return end
+	local tracerPart = nil
+	if camLocked and camTarget and camTarget.Parent then
+		local char = camTarget.Parent
+		tracerPart = char:FindFirstChild(CL_C['Hit Part'] or 'HumanoidRootPart') or camTarget
+	elseif isLocking and currentTarget and currentTarget.Parent then
+		tracerPart = currentTarget
+	end
+	if not tracerPart then tracerLine.Visible = false; return end
+	local sp, on = Camera:WorldToViewportPoint(tracerPart.Position)
+	if not on or sp.Z <= 0 then tracerLine.Visible = false; return end
+	local mp = UserInputService:GetMouseLocation()
+	tracerLine.From         = Vector2.new(mp.X, mp.Y)
+	tracerLine.To           = Vector2.new(sp.X, sp.Y)
+	tracerLine.Thickness    = TR['Thickness']    or 1
+	tracerLine.Transparency = TR['Transparency'] or 1
+	tracerLine.Color        = TR['Color']        or Color3.fromRGB(205,180,219)
+	tracerLine.Visible      = true
+end
+
+local function getHumanoid()
+	local char = LocalPlayer.Character
+	return char and char:FindFirstChildOfClass('Humanoid')
+end
+
+RunService.RenderStepped:Connect(function()
+	if not SPD_C['Enabled'] or not speedEnabled then return end
+	local hum = getHumanoid(); if hum then hum.WalkSpeed = SPD_C['Speed'] or 16 end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+	char:WaitForChild('Humanoid')
+	if speedEnabled then char.Humanoid.WalkSpeed = SPD_C['Speed'] or 16 end
+end)
+
+local autoShootLastFire = 0
+RunService.Heartbeat:Connect(function()
+	if isShutdown then return end
+	local AS = SA and SA['Auto Shoot']
+	if not (AS and AS['Enabled'] and SA['Enabled'] and isLocking and currentTarget and currentTarget.Parent) then return end
+	if isHoldingKnife() then return end
+	local now = tick(); local delay = AS['Delay'] or 0.1
+	if now - autoShootLastFire < delay then return end
+	if AS['FOV Check'] and SA['FOV']['Enabled'] then
 		local mp = UserInputService:GetMouseLocation()
-		CLFovCircle.Position = Vector2.new(mp.X, mp.Y)
-		CLFovCircle.Radius   = fovCfg['Size'] or 120
-		CLFovCircle.Color    = fovCfg['Color'] or Color3.fromRGB(255, 255, 255)
-		CLFovCircle.Visible  = true
+		local sp, on = Camera:WorldToViewportPoint(currentTarget.Position)
+		if not on or sp.Z <= 0 or (Vector2.new(sp.X,sp.Y)-mp).Magnitude > (SA['FOV']['Size'] or 160) then return end
+	end
+	if AS['Mode'] ~= 'Part' and not canSeeTarget(currentTarget) then return end
+	local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass('Tool')
+	if tool then pcall(function() tool:Activate(); autoShootLastFire = now end) end
+end)
+
+RunService.RenderStepped:Connect(function()
+	if isShutdown then return end
+
+	-- Silent Aim: Automatic mode
+	if SA['Enabled'] and SA['Target Mode'] == 'Automatic' then
+		if isHoldingKnife() then
+			currentTarget = nil; isLocking = false; lastVisibleTarget = nil
+		else
+			local fovLimit = (SA['FOV']['Enabled'] and SA['FOV']['Size']) or math.huge
+			local maxDist  = (SA['Distance Check']['Enabled'] and SA['Distance Check']['Max']) or math.huge
+			local camPos   = Camera.CFrame.Position
+			local mp       = UserInputService:GetMouseLocation()
+			local best, bd = nil, math.huge
+			for _, target in ipairs(getAllTargets()) do
+				local isBot = type(target) == 'table' and target._isBot
+				if not isBot and isBlacklisted(target) then continue end
+				local char = target.Character
+				if not char or not char:FindFirstChild('HumanoidRootPart') then continue end
+				if isBot and isBotDead(target) or (not isBot and isPlayerKnockedOrKO(target)) then continue end
+				local hrp = char:FindFirstChild('HumanoidRootPart')
+				if hrp and (hrp.Position - camPos).Magnitude > maxDist then continue end
+				local sp, on = Camera:WorldToViewportPoint(hrp.Position)
+				if on and sp.Z > 0 then
+					local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+					if d <= fovLimit and d < bd then bd = d; best = hrp end
+				end
+			end
+			if best then
+				local char = best.Parent; local hp = SA['Hit Part']
+				local part = (hp == 'Closest Part') and getClosestBodyPart(char) or char:FindFirstChild(hp) or best
+				currentTarget = part; isLocking = true; lastVisibleTarget = part
+			else
+				currentTarget = nil; isLocking = false; lastVisibleTarget = nil
+			end
+		end
+	end
+
+	-- Silent Aim: Target mode tracking
+	if SA['Target Mode'] ~= 'Automatic' and isLocking and currentTarget then
+		local char = currentTarget.Parent
+		local rp   = char and Players:GetPlayerFromCharacter(char)
+		local hum  = char and char:FindFirstChildOfClass('Humanoid')
+		if not char or (hum and hum.Health <= 0) or (rp and isPlayerKnockedOrKO(rp)) then
+			if Checks['Respawn Check'] == false and saLockedPlayer then
+				currentTarget = nil; isLocking = false; lastVisibleTarget = nil
+				local lockedP = saLockedPlayer; local isBot = type(lockedP) == 'table' and lockedP._isBot
+				task.spawn(function()
+					local newChar
+					if isBot then
+						repeat task.wait(0.2) until (not saWantsLock or saLockedPlayer ~= lockedP)
+							or (BotProxies[lockedP.Name] and BotProxies[lockedP.Name].Character)
+						newChar = BotProxies[lockedP.Name] and BotProxies[lockedP.Name].Character
+					else
+						newChar = lockedP.CharacterAdded:Wait()
+						newChar:WaitForChild('HumanoidRootPart', 10); task.wait(0.1)
+					end
+					if saWantsLock and saLockedPlayer == lockedP and newChar then
+						local hp = SA['Hit Part']
+						local part = (hp == 'Closest Part') and getClosestBodyPart(newChar)
+						          or newChar:FindFirstChild(hp) or newChar:FindFirstChild('HumanoidRootPart')
+						if part then currentTarget = part; lastVisibleTarget = part; isLocking = true end
+					end
+				end)
+			else
+				currentTarget = nil; isLocking = false; saWantsLock = false
+				lastVisibleTarget = nil; saLockedPlayer = nil
+			end
+		else
+			if canSeeTarget(currentTarget) then lastVisibleTarget = currentTarget end
+			if SA['Hit Part'] == 'Closest Part' then
+				local p = getClosestBodyPart(char); if p then currentTarget = p end
+			end
+		end
+	end
+
+	-- Camera Lock: Automatic targeting
+	if CL_C['Enabled'] and CL_C['Target Mode'] == 'Automatic' then
+		if isHoldingKnife() then
+			camLocked = false; camTarget = nil
+		else
+			local best = clFindClosest()
+			if best then camLocked = true; camTarget = best
+			else camLocked = false; camTarget = nil end
+		end
+	end
+
+	-- Camera Lock: FOV circle
+	if CL_C['Enabled'] then
+		local fovCfg = CL_C['FOV'] or {}
+		if fovCfg['Enabled'] and fovCfg['Visible'] then
+			local mp = UserInputService:GetMouseLocation()
+			CLFovCircle.Position = Vector2.new(mp.X, mp.Y)
+			CLFovCircle.Radius   = fovCfg['Size'] or 120
+			CLFovCircle.Color    = fovCfg['Color'] or Color3.fromRGB(255,255,255)
+			CLFovCircle.Visible  = true
+		else
+			CLFovCircle.Visible = false
+		end
 	else
 		CLFovCircle.Visible = false
 	end
 
-	-- Automatic mode handled in main render loop
-
-	if not camLocked or not camTarget then return end
-	if isHoldingKnife() then return end
-
-	local char = camTarget.Parent
-	if not char or clIsKnocked(char) then
-		camLocked = false; camTarget = nil; return
-	end
-
-	-- resolve hit part
-	local hitPart = CL_C['Hit Part'] or 'HumanoidRootPart'
-	local aimPart = camTarget
-	if hitPart == 'Closest Part' then
-		local mp2 = UserInputService:GetMouseLocation()
-		local best, bd = nil, math.huge
-		for _, part in ipairs(getBodyParts(char)) do
-			local sp, on = Camera:WorldToViewportPoint(part.Position)
-			if on and sp.Z > 0 then
-				local d = (UserInputService:GetMouseLocation() - Vector2.new(sp.X, sp.Y)).Magnitude
-				if d < bd then best = part; bd = d end
-			end
+	-- Camera Lock: aim
+	if CL_C['Enabled'] and camLocked and camTarget and not isHoldingKnife() then
+		local char = camTarget.Parent
+		if not char or clIsKnocked(char) then
+			camLocked = false; camTarget = nil
+		else
+			local hitPart = CL_C['Hit Part'] or 'HumanoidRootPart'
+			local aimPart = (hitPart == 'Closest Part') and getClosestBodyPart(char)
+			              or char:FindFirstChild(hitPart) or camTarget
+			local pred    = CL_C['Prediction'] or {}
+			local vel     = Vector3.new(0,0,0)
+			pcall(function() vel = camTarget.AssemblyLinearVelocity end)
+			local scale   = math.clamp((aimPart.Position - Camera.CFrame.Position).Magnitude / 100, 0.05, 1)
+			local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
+			local aimPos  = aimPart.Position + Vector3.new(vel.X*px*scale, vel.Y*py*scale, vel.Z*pz*scale)
+			local targetCF = CFrame.new(Camera.CFrame.Position, aimPos)
+			local smooth   = math.clamp(tonumber(CL_C['Smoothness']) or 0, 0, 0.99)
+			Camera.CFrame  = smooth <= 0 and targetCF or Camera.CFrame:Lerp(targetCF, 1 - smooth)
 		end
-		if best then aimPart = best end
-	else
-		local found = char:FindFirstChild(hitPart)
-		if found then aimPart = found end
 	end
 
-	-- prediction: XYZ velocity-based
-	local pred    = CL_C['Prediction'] or {}
-	local px      = pred['X'] or 0
-	local py      = pred['Y'] or 0
-	local pz      = pred['Z'] or 0
-	local vel     = Vector3.new(0, 0, 0)
-	pcall(function() vel = camTarget.AssemblyLinearVelocity end)
-	local dist    = (aimPart.Position - Camera.CFrame.Position).Magnitude
-	local scale   = math.clamp(dist / 100, 0.05, 1)
-	local aimPos  = aimPart.Position + Vector3.new(vel.X * px * scale, vel.Y * py * scale, vel.Z * pz * scale)
-
-	local targetCF = CFrame.new(Camera.CFrame.Position, aimPos)
-
-	-- smoothness: 0 = instant lock (blatant), 0.01-0.99 = lerp (legit), decimals supported
-	local smooth = math.clamp(tonumber(CL_C['Smoothness']) or 0, 0, 0.99)
-	if smooth <= 0 then
-		Camera.CFrame = targetCF
-	else
-		local alpha = 1 - smooth
-		Camera.CFrame = Camera.CFrame:Lerp(targetCF, alpha)
-	end
+	updateFOV()
+	updateTracer()
+	refreshESP()
 end)
 
--- ============================================================================
---  INPUT / KEYBINDS
--- ============================================================================
+do
+	local isMouseDown = false
+	UserInputService.InputBegan:Connect(function(i, gp)
+		if not gp and i.UserInputType == Enum.UserInputType.MouseButton1 then isMouseDown = true end
+	end)
+	UserInputService.InputEnded:Connect(function(i, gp)
+		if not gp and i.UserInputType == Enum.UserInputType.MouseButton1 then isMouseDown = false end
+	end)
+	task.spawn(function()
+		while true do
+			local rf = CFG['Rapid Fire']
+			if rf['Enabled'] and isMouseDown and not isHoldingKnife() then
+				local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass('Tool')
+				if tool then
+					local allowed = true
+					if rf['Specific Weapons']['Enabled'] then
+						allowed = false
+						for _, w in ipairs(rf['Specific Weapons']['Weapons']) do
+							if tool.Name == w or tool.Name:find(w:gsub('%[',''):gsub('%]',''), 1, true) then
+								allowed = true; break
+							end
+						end
+					end
+					if allowed then tool:Activate() end
+				end
+			end
+			local cd = rf['Cooldown'] or 0
+			if cd > 0 then task.wait(cd) else task.wait() end
+		end
+	end)
+end
+
+do
+	local IR_C  = CFG['Infinite Range']
+	local PROPS = {'Range','MaxRange','FireRange','Distance','MaxDistance','BulletRange'}
+	if IR_C and IR_C['Enabled'] then
+		RunService.RenderStepped:Connect(function()
+			if not IR_C['Enabled'] then return end
+			local char = LocalPlayer.Character
+			local tool = char and char:FindFirstChildOfClass('Tool'); if not tool then return end
+			local range = IR_C['Range'] or 900000000
+			for _, prop in ipairs(PROPS) do
+				local v = tool:FindFirstChild(prop)
+				if v and (v:IsA('NumberValue') or v:IsA('IntValue')) then v.Value = range end
+				local gc = tool:FindFirstChild('Configuration') or tool:FindFirstChild('GunConfig')
+				if gc then local r = gc:FindFirstChild(prop)
+					if r and (r:IsA('NumberValue') or r:IsA('IntValue')) then r.Value = range end
+				end
+			end
+		end)
+	end
+end
+
+do
+	local SM_C = CFG['Spread Modifier']
+	if SM_C and SM_C['Enabled'] and hookfunction then
+		local oldRandom
+		oldRandom = hookfunction(math.random, function(...)
+			local args = {...}
+			if checkcaller() then return oldRandom(...) end
+			local isSpread = (#args == 0)
+				or (args[1] and args[2] and args[1] < 0 and args[2] > 0 and math.abs(args[1]) <= 0.15)
+			if isSpread then
+				local cfg = CFG['Spread Modifier']
+				if not cfg or not cfg['Enabled'] then return oldRandom(...) end
+				if cfg['Specific Weapons']['Enabled'] then
+					local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass('Tool')
+					if not tool then return oldRandom(...) end
+					local found = false
+					for _, w in ipairs(cfg['Specific Weapons']['Weapons']) do
+						if tool.Name:lower():find(w:gsub('%[',''):gsub('%]',''):lower(), 1, true) then found = true; break end
+					end
+					if not found then return oldRandom(...) end
+				end
+				return oldRandom(...) * (cfg['Amount'] or 0)
+			end
+			return oldRandom(...)
+		end)
+	end
+end
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 
-	-- Shutdown
 	if input.KeyCode == Enum.KeyCode[Binds['Shutdown']:upper()] then
 		isShutdown = true
-		-- restore metatable
 		pcall(function()
 			setreadonly(getrawmetatable(game), false)
 			getrawmetatable(game).__index = oldIndex
 			setreadonly(getrawmetatable(game), true)
 		end)
-		-- clear state
 		currentTarget = nil; isLocking = false; saWantsLock = false
-		lastVisibleTarget = nil; saLockedPlayer = nil; speedEnabled = false
-		camLocked = false; camTarget = nil
-		-- restore walkspeed
-		pcall(function()
-			local hum = getHumanoid()
-			if hum then hum.WalkSpeed = 16 end
-		end)
-		-- destroy ESP
+		lastVisibleTarget = nil; saLockedPlayer = nil
+		camLocked = false; camTarget = nil; speedEnabled = false
+		pcall(function() local hum = getHumanoid(); if hum then hum.WalkSpeed = 16 end end)
 		for _, e in pairs(espLabels) do pcall(function() e.tag:Destroy() end) end
 		espLabels = {}
 		pcall(function() espGui:Destroy() end)
@@ -929,49 +709,38 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		return
 	end
 
-	-- ESP toggle
 	if input.KeyCode == Enum.KeyCode[Binds['ESP']:upper()] then
 		ESP_C['Enabled'] = not ESP_C['Enabled']
-		if not ESP_C['Enabled'] then
-			for _, e in pairs(espLabels) do e.tag.Visible = false end
-		end
+		if not ESP_C['Enabled'] then for _, e in pairs(espLabels) do e.tag.Visible = false end end
 		return
 	end
 
-	-- Camera Lock toggle (Target mode only)
+	if input.KeyCode == Enum.KeyCode[Binds['Speed']:upper()] then
+		speedEnabled = not speedEnabled
+		if not speedEnabled then local hum = getHumanoid(); if hum then hum.WalkSpeed = 16 end end
+		return
+	end
+
+	if SA['Enabled'] and Binds['Auto Shoot'] and input.KeyCode == Enum.KeyCode[Binds['Auto Shoot']:upper()] then
+		local AS = SA['Auto Shoot']; if AS then AS['Enabled'] = not AS['Enabled'] end
+		return
+	end
+
 	if CL_C['Enabled'] and CL_C['Target Mode'] ~= 'Automatic'
 		and input.KeyCode == Enum.KeyCode[Binds['Camera Lock']:upper()] then
 		if camLocked then
 			camLocked = false; camTarget = nil
 		else
-			if isHoldingKnife() then return end
-			local best = clFindClosest()
-			if best then camLocked = true; camTarget = best end
+			if not isHoldingKnife() then
+				local best = clFindClosest()
+				if best then camLocked = true; camTarget = best end
+			end
 		end
 		return
 	end
 
-	-- Speed toggle
-	if SPD_C['Enabled'] and input.KeyCode == Enum.KeyCode[Binds['Speed']:upper()] then
-		speedEnabled = not speedEnabled
-		if not speedEnabled then
-			local hum = getHumanoid()
-			if hum then hum.WalkSpeed = 16 end
-		end
-		return
-	end
-
-	-- Auto Shoot toggle
-	if SA['Enabled'] and Binds['Auto Shoot'] and input.KeyCode == Enum.KeyCode[Binds['Auto Shoot']:upper()] then
-		local AS = SA['Auto Shoot']
-		if AS then AS['Enabled'] = not AS['Enabled'] end
-		return
-	end
-
-	-- Silent Aim toggle (Target mode only)
 	if input.KeyCode ~= Enum.KeyCode[Binds['Silent Aim']:upper()] then return end
 	if not SA['Enabled'] or SA['Target Mode'] == 'Automatic' then return end
-
 	if saWantsLock then
 		saWantsLock = false; isLocking = false
 		currentTarget = nil; lastVisibleTarget = nil; saLockedPlayer = nil
@@ -981,24 +750,21 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		local target = findClosestTarget()
 		if target then
 			currentTarget = target; lastVisibleTarget = target; isLocking = true
-			local realPlayer = Players:GetPlayerFromCharacter(target.Parent)
-			if realPlayer then
-				saLockedPlayer = realPlayer
-			else
-				for _, proxy in pairs(BotProxies) do
-					if proxy.Character == target.Parent then saLockedPlayer = proxy; break end
-				end
-			end
+			local rp = Players:GetPlayerFromCharacter(target.Parent)
+			if rp then saLockedPlayer = rp
+			else for _, proxy in pairs(BotProxies) do
+				if proxy.Character == target.Parent then saLockedPlayer = proxy; break end
+			end end
 		end
 	end
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
 	currentTarget = nil; isLocking = false; saWantsLock = false
-	lastVisibleTarget = nil; saLockedPlayer = nil; speedEnabled = false
+	lastVisibleTarget = nil; saLockedPlayer = nil
+	camLocked = false; camTarget = nil; speedEnabled = false
 end)
 
--- Register cleanup for re-execution
 shared.VyronCleanup = function()
 	isShutdown = true
 	pcall(function()
@@ -1015,4 +781,3 @@ shared.VyronCleanup = function()
 end
 
 print("[Vyron] Ready.")
-
