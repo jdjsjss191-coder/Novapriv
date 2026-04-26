@@ -692,6 +692,12 @@ local hudGui = nil
 do
 	local HUD_C = CFG['General']['HUD']
 	if HUD_C['Enabled'] then
+		-- destroy any existing HUD from previous execution
+		for _, gui in ipairs({game:GetService("CoreGui"), LocalPlayer:WaitForChild("PlayerGui")}) do
+			local old = gui:FindFirstChild("VyronHUD")
+			if old then pcall(function() old:Destroy() end) end
+		end
+
 		hudGui = Instance.new("ScreenGui")
 		hudGui.Name = "VyronHUD"; hudGui.ResetOnSpawn = false
 		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = false
@@ -701,7 +707,7 @@ do
 		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
 		frame.AnchorPoint = Vector2.new(0.5, 1)
-		frame.Position = UDim2.new(0.5, 0, 1, -60)
+		frame.Position = UDim2.new(0.5, 0, 1, -75)
 		frame.Size = UDim2.new(0, 300, 0, 0)
 		frame.AutomaticSize = Enum.AutomaticSize.Y
 
