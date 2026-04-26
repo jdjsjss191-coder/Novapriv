@@ -618,6 +618,48 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================================
+--  RAPID FIRE
+-- ============================================================================
+do
+	local RF_C        = CFG['Rapid Fire']
+	local isMouseDown = false
+
+	UserInputService.InputBegan:Connect(function(i, gp)
+		if not gp and i.UserInputType == Enum.UserInputType.MouseButton1 then
+			isMouseDown = true
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(i, gp)
+		if not gp and i.UserInputType == Enum.UserInputType.MouseButton1 then
+			isMouseDown = false
+		end
+	end)
+
+	task.spawn(function()
+		while true do
+			local rf = CFG['Rapid Fire']
+			if rf['Enabled'] and isMouseDown and not isHoldingKnife() then
+				local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass('Tool')
+				if tool then
+					local allowed = true
+					if rf['Specific Weapons']['Enabled'] then
+						allowed = false
+						for _, w in ipairs(rf['Specific Weapons']['Weapons']) do
+							local clean = w:gsub('%[',''):gsub('%]','')
+							if tool.Name == w or tool.Name:find(clean, 1, true) then
+								allowed = true; break
+							end
+						end
+					end
+					if allowed then tool:Activate() end
+				end
+			end
+			task.wait(rf['Cooldown'] or 0.01)
+		end
+	end)
+end
+
+-- ============================================================================
 --  INFINITE RANGE
 -- ============================================================================
 do
