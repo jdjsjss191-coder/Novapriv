@@ -687,16 +687,18 @@ end
 -- ============================================================================
 --  HUD
 -- ============================================================================
+local hudGui = nil
+
 do
 	local HUD_C = CFG['General']['HUD']
 	if HUD_C['Enabled'] then
-		local sg = Instance.new("ScreenGui")
-		sg.Name = "VyronHUD"; sg.ResetOnSpawn = false
-		sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; sg.IgnoreGuiInset = true
-		pcall(function() sg.Parent = game:GetService("CoreGui") end)
-		if not sg.Parent then sg.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+		hudGui = Instance.new("ScreenGui")
+		hudGui.Name = "VyronHUD"; hudGui.ResetOnSpawn = false
+		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
+		pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
+		if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
-		local frame = Instance.new("Frame", sg)
+		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
 		frame.AnchorPoint = Vector2.new(0.5, 1)
 		frame.Position = UDim2.new(0.5, 0, 0.93, 0)
@@ -828,6 +830,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		for _, e in pairs(espLabels) do pcall(function() e.tag:Destroy() end) end
 		espLabels = {}
 		pcall(function() espGui:Destroy() end)
+		pcall(function() if hudGui then hudGui:Destroy() end end)
 		pcall(function() SAFovCircle:Remove() end)
 		pcall(function() CLFovCircle:Remove() end)
 		pcall(function() tracerLine:Remove() end)
@@ -902,6 +905,7 @@ shared.VyronCleanup = function()
 	for _, e in pairs(espLabels) do pcall(function() e.tag:Destroy() end) end
 	espLabels = {}
 	pcall(function() espGui:Destroy() end)
+	pcall(function() if hudGui then hudGui:Destroy() end end)
 	pcall(function() SAFovCircle:Remove() end)
 	pcall(function() CLFovCircle:Remove() end)
 	pcall(function() tracerLine:Remove() end)
