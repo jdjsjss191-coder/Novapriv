@@ -6,7 +6,7 @@ if shared.VyronCleanup then pcall(shared.VyronCleanup); shared.VyronCleanup = ni
 
 -- Force destroy any leftover GUIs from previous executions
 pcall(function()
-	for _, name in ipairs({"VyronHUD", "VyronESP", "VyronDmgIndicator"}) do
+	for _, name in ipairs({"VyronHUD", "VyronESP", "VyronDmgIndicator"})
 		local cg = game:GetService("CoreGui"):FindFirstChild(name)
 		if cg then cg:Destroy() end
 		local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
@@ -147,9 +147,8 @@ local function makeBotProxy(name)
 		if k == 'Character' then
 			local m = t._model
 			if not m or not m.Parent then return nil end
-			local ok, hum = pcall(function() return m:FindFirstChildOfClass('Humanoid') end)
-			if not ok or not hum then return nil end
-			if hum.Health <= 0 then return nil end
+			local hum = m:FindFirstChildOfClass('Humanoid')
+			if hum and hum.Health <= 0 then return nil end
 			return m
 		end
 	end })
@@ -260,19 +259,39 @@ setreadonly(grm, false)
 local currentPlaceId = game.PlaceId
 local isPrisonWars   = currentPlaceId == 155615604
 local isArsenal      = currentPlaceId == 286090429
+local oldNamecall    = grm.__namecall
 
 if isPrisonWars or isArsenal then
-	local oldNamecall
-	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+	local closesthitpart = nil
+	local function getclosestplayer()
+		local best, bd = nil, math.huge
+		local mp       = UserInputService:GetMouseLocation()
+		local fovLimit = (SA['FOV']['Enabled'] and SA['FOV']['Size']) or math.huge
+		for _, p in pairs(Players:GetPlayers()) do
+			if p == LocalPlayer or not p.Character then continue end
+			if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then continue end
+			local bp  = p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("Torso")
+			local hum = p.Character:FindFirstChild("Humanoid")
+			if not bp or not hum or hum.Health <= 0 then continue end
+			local sp, on = Camera:WorldToViewportPoint(bp.Position)
+			if on then
+				local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+				if d < bd and d <= fovLimit then bd = d; best = bp end
+			end
+		end
+		return best
+	end
+	RunService.Heartbeat:Connect(function()
+		if SA and SA['Enabled'] then closesthitpart = getclosestplayer() end
+	end)
+	grm.__namecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local method, args = getnamecallmethod(), {...}
 		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
-			if SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
-				if not isHoldingKnife() then
-					local origin = args[2]
-					local aimPos = getPredictedPosition(currentTarget)
-					args[2], args[3] = origin, (aimPos - origin).Unit * 1000
-					return oldNamecall(table.unpack(args))
-				end
+			local hp = closesthitpart
+			if hp and SA and SA['Enabled'] then
+				local origin = args[2]
+				args[2], args[3] = origin, (hp.Position - origin).Unit * 1000
+				return oldNamecall(table.unpack(args))
 			end
 		end
 		return oldNamecall(...)
