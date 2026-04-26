@@ -692,7 +692,6 @@ local hudGui = nil
 do
 	local HUD_C = CFG['General']['HUD']
 	if HUD_C['Enabled'] then
-		-- destroy any existing HUD from previous execution
 		for _, gui in ipairs({game:GetService("CoreGui"), LocalPlayer:WaitForChild("PlayerGui")}) do
 			local old = gui:FindFirstChild("VyronHUD")
 			if old then pcall(function() old:Destroy() end) end
@@ -700,32 +699,32 @@ do
 
 		hudGui = Instance.new("ScreenGui")
 		hudGui.Name = "VyronHUD"; hudGui.ResetOnSpawn = false
-		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = false
+		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
 		pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
 		if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
-		frame.AnchorPoint = Vector2.new(0.5, 1)
-		frame.Position = UDim2.new(0.5, 0, 1, -75)
-		frame.Size = UDim2.new(0, 300, 0, 0)
+		frame.AnchorPoint = Vector2.new(1, 0.5)
+		frame.Position = UDim2.new(1, -12, 0.5, 0)
+		frame.Size = UDim2.new(0, 160, 0, 0)
 		frame.AutomaticSize = Enum.AutomaticSize.Y
 
 		local layout = Instance.new("UIListLayout", frame)
 		layout.FillDirection = Enum.FillDirection.Vertical
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.VerticalAlignment = Enum.VerticalAlignment.Top
-		layout.Padding = UDim.new(0, 3)
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+		layout.Padding = UDim.new(0, 4)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
 
-		local function makeLabel(order)
+		local function makeLabel(size, order)
 			local lbl = Instance.new("TextLabel", frame)
 			lbl.BackgroundTransparency = 1
-			lbl.Size = UDim2.new(1, 0, 0, 18)
-			lbl.TextXAlignment = Enum.TextXAlignment.Center
+			lbl.Size = UDim2.new(1, 0, 0, size + 4)
+			lbl.TextXAlignment = Enum.TextXAlignment.Right
 			lbl.Font = Enum.Font.GothamBold
-			lbl.TextSize = 14
-			lbl.TextStrokeTransparency = 0.5
+			lbl.TextSize = size
+			lbl.TextStrokeTransparency = 0.4
 			lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 			lbl.RichText = true
 			lbl.Text = ""; lbl.Visible = false
@@ -733,14 +732,14 @@ do
 			return lbl
 		end
 
-		local titleLbl = makeLabel(0)
-		local lblSA    = makeLabel(1)
-		local lblCL    = makeLabel(2)
-		local lblRF    = makeLabel(3)
-		local lblSM    = makeLabel(4)
-		local lblIR    = makeLabel(5)
-		local lblSPD   = makeLabel(6)
-		local lblESP   = makeLabel(7)
+		local titleLbl = makeLabel(18, 0)
+		local lblSA    = makeLabel(13, 1)
+		local lblCL    = makeLabel(13, 2)
+		local lblRF    = makeLabel(13, 3)
+		local lblSM    = makeLabel(13, 4)
+		local lblIR    = makeLabel(13, 5)
+		local lblSPD   = makeLabel(13, 6)
+		local lblESP   = makeLabel(13, 7)
 
 		local function rgb(c)
 			return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
@@ -766,54 +765,39 @@ do
 
 		RunService.Heartbeat:Connect(function()
 			if isShutdown then return end
-			local TC = HUD_C['Title Color']   or Color3.fromRGB(255,255,255)
 			local tname = getTargetName()
+			local TC = HUD_C['Title Color'] or Color3.fromRGB(180, 180, 180)
 
-			-- title: always visible
 			titleLbl.Visible = true
-			titleLbl.Text = string.format('<font color="%s">vyron.cc</font>', rgb(TC))
+			titleLbl.Text = string.format('<font color="%s">Vyron.cc</font>', rgb(TC))
 
-			-- Silent Aim: only show when actively locked on
 			if SA['Enabled'] and isLocking then
-				lblSA.Visible = true
-				lblSA.Text = fmt("Silent Aim", tname)
+				lblSA.Visible = true; lblSA.Text = fmt("Silent Aim", tname)
 			else lblSA.Visible = false end
 
-			-- Cam Lock: only show when actively locked
 			if CL_C['Enabled'] and camLocked then
-				lblCL.Visible = true
-				lblCL.Text = fmt("Cam Lock", tname)
+				lblCL.Visible = true; lblCL.Text = fmt("Cam Lock", tname)
 			else lblCL.Visible = false end
 
-			-- Speed: only show when toggled on
 			if SPD_C['Enabled'] and speedEnabled then
-				lblSPD.Visible = true
-				lblSPD.Text = fmt("WalkSpeed", nil)
+				lblSPD.Visible = true; lblSPD.Text = fmt("WalkSpeed", nil)
 			else lblSPD.Visible = false end
 
-			-- Rapid Fire: only show while mouse is held (mouse1 down)
 			local rfActive = CFG['Rapid Fire']['Enabled'] and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
 			if rfActive then
-				lblRF.Visible = true
-				lblRF.Text = fmt("Rapid Fire", nil)
+				lblRF.Visible = true; lblRF.Text = fmt("Rapid Fire", nil)
 			else lblRF.Visible = false end
 
-			-- Spread Mod: show when enabled (always active passively)
 			if CFG['Spread Modifier']['Enabled'] then
-				lblSM.Visible = true
-				lblSM.Text = fmt("Spread Mod", nil)
+				lblSM.Visible = true; lblSM.Text = fmt("Spread Mod", nil)
 			else lblSM.Visible = false end
 
-			-- Inf Range: show when enabled
 			if CFG['Infinite Range']['Enabled'] then
-				lblIR.Visible = true
-				lblIR.Text = fmt("Inf Range", nil)
+				lblIR.Visible = true; lblIR.Text = fmt("Inf Range", nil)
 			else lblIR.Visible = false end
 
-			-- ESP: show when enabled
 			if ESP_C['Enabled'] then
-				lblESP.Visible = true
-				lblESP.Text = fmt("ESP", nil)
+				lblESP.Visible = true; lblESP.Text = fmt("ESP", nil)
 			else lblESP.Visible = false end
 		end)
 	end
