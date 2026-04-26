@@ -4,6 +4,16 @@ local CFG = shared.VyronNew
 
 if shared.VyronCleanup then pcall(shared.VyronCleanup); shared.VyronCleanup = nil end
 
+-- Force destroy any leftover GUIs from previous executions
+pcall(function()
+	for _, name in ipairs({"VyronHUD", "VyronESP", "VyronDmgIndicator"}) do
+		local cg = game:GetService("CoreGui"):FindFirstChild(name)
+		if cg then cg:Destroy() end
+		local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+		if pg then local g = pg:FindFirstChild(name); if g then g:Destroy() end end
+	end
+end)
+
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService       = game:GetService("RunService")
