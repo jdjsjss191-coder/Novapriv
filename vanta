@@ -699,8 +699,9 @@ do
 		local frame = Instance.new("Frame", sg)
 		frame.BackgroundTransparency = 1
 		frame.AnchorPoint = Vector2.new(0.5, 1)
-		frame.Position = UDim2.new(0.5, 0, 1, -12)
-		frame.Size = UDim2.new(0, 300, 0, 200)
+		frame.Position = UDim2.new(0.5, 0, 1, -8)
+		frame.Size = UDim2.new(0, 300, 0, 0)
+		frame.AutomaticSize = Enum.AutomaticSize.Y
 
 		local layout = Instance.new("UIListLayout", frame)
 		layout.FillDirection = Enum.FillDirection.Vertical
