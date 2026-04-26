@@ -384,6 +384,7 @@ local function refreshESP()
 		if not NT['Enabled'] then e.tag.Visible = false; continue end
 		local isTarget = (currentTarget ~= nil and currentTarget.Parent == char)
 		              or (camLocked and camTarget ~= nil and camTarget.Parent == char)
+		              or (tbActive and tbTarget ~= nil and tbTarget.Character == char)
 		local nameMode = NT['Mode'] or 'Username'
 		e.tag.Text       = isBot and player.Name or (nameMode == 'DisplayName' and player.DisplayName) or player.Name
 		e.tag.TextColor3 = isTarget
@@ -443,6 +444,8 @@ local function updateTracer()
 		tracerPart = char:FindFirstChild(CL_C['Hit Part'] or 'HumanoidRootPart') or camTarget
 	elseif isLocking and currentTarget and currentTarget.Parent then
 		tracerPart = currentTarget
+	elseif tbActive and tbTarget and tbTarget.Character then
+		tracerPart = tbTarget.Character:FindFirstChild('HumanoidRootPart')
 	end
 	if not tracerPart then tracerLine.Visible = false; return end
 	local sp, on = Camera:WorldToViewportPoint(tracerPart.Position)
