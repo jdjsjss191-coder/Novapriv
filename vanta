@@ -717,7 +717,7 @@ do
 		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
 		frame.AnchorPoint = Vector2.new(1, 0.5)
-		frame.Position = UDim2.fromScale(0.98, 0.5)
+		frame.Position = UDim2.fromScale(0.88, 0.5)
 		frame.Size = UDim2.new(0, 160, 0, 0)
 		frame.AutomaticSize = Enum.AutomaticSize.Y
 
@@ -780,7 +780,7 @@ do
 			local TC = HUD_C['Title Color'] or Color3.fromRGB(180, 180, 180)
 
 			titleLbl.Visible = true
-			titleLbl.Text = string.format('<font color="%s">Vyron.cc</font>', rgb(TC))
+			titleLbl.Text = string.format('<font color="%s">Vyron</font>', rgb(TC))
 
 			if SA['Enabled'] and isLocking then
 				lblSA.Visible = true; lblSA.Text = fmt("Silent Aim", tname)
