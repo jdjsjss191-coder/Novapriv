@@ -470,6 +470,43 @@ local function updateFOV()
 end
 
 -- ============================================================================
+--  TARGET TRACER
+-- ============================================================================
+local tracerLine = Drawing.new("Line")
+tracerLine.Visible      = false
+tracerLine.Thickness    = 1
+tracerLine.Transparency = 1
+tracerLine.ZIndex       = 999
+
+local function updateTracer()
+	local TR = ESP_C['Tracer']
+	if not TR or not TR['Enabled'] then tracerLine.Visible = false; return end
+
+	-- pick active target: camlock takes priority, then silent aim
+	local tracerPart = nil
+	if camLocked and camTarget and camTarget.Parent then
+		local char    = camTarget.Parent
+		local hitPart = CL_C['Hit Part'] or 'HumanoidRootPart'
+		tracerPart    = char:FindFirstChild(hitPart) or camTarget
+	elseif isLocking and currentTarget and currentTarget.Parent then
+		tracerPart = currentTarget
+	end
+
+	if not tracerPart then tracerLine.Visible = false; return end
+
+	local sp, on = Camera:WorldToViewportPoint(tracerPart.Position)
+	if not on or sp.Z <= 0 then tracerLine.Visible = false; return end
+
+	local mp = UserInputService:GetMouseLocation()
+	tracerLine.From         = Vector2.new(mp.X, mp.Y)
+	tracerLine.To           = Vector2.new(sp.X, sp.Y)
+	tracerLine.Thickness    = TR['Thickness']    or 1
+	tracerLine.Transparency = TR['Transparency'] or 1
+	tracerLine.Color        = TR['Color']        or Color3.fromRGB(205, 180, 219)
+	tracerLine.Visible      = true
+end
+
+-- ============================================================================
 --  SPEED
 -- ============================================================================
 local function getHumanoid()
@@ -628,6 +665,7 @@ RunService.RenderStepped:Connect(function()
 	end
 
 	updateFOV()
+	updateTracer()
 	refreshESP()
 end)
 
@@ -885,6 +923,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		pcall(function() espGui:Destroy() end)
 		pcall(function() SAFovCircle:Remove() end)
 		pcall(function() CLFovCircle:Remove() end)
+		pcall(function() tracerLine:Remove() end)
 		shared.VyronCleanup = nil
 		print("[Vyron] Shutdown complete.")
 		return
@@ -972,6 +1011,7 @@ shared.VyronCleanup = function()
 	pcall(function() espGui:Destroy() end)
 	pcall(function() SAFovCircle:Remove() end)
 	pcall(function() CLFovCircle:Remove() end)
+	pcall(function() tracerLine:Remove() end)
 end
 
 print("[Vyron] Ready.")
