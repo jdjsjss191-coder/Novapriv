@@ -694,14 +694,14 @@ do
 	if HUD_C['Enabled'] then
 		hudGui = Instance.new("ScreenGui")
 		hudGui.Name = "VyronHUD"; hudGui.ResetOnSpawn = false
-		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
+		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = false
 		pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
 		if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
 		frame.AnchorPoint = Vector2.new(0.5, 1)
-		frame.Position = UDim2.new(0.5, 0, 1, -105)
+		frame.Position = UDim2.new(0.5, 0, 1, -10)
 		frame.Size = UDim2.new(0, 300, 0, 0)
 		frame.AutomaticSize = Enum.AutomaticSize.Y
 
