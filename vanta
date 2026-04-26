@@ -698,112 +698,113 @@ do
 
 		local frame = Instance.new("Frame", sg)
 		frame.BackgroundTransparency = 1
-		frame.Size = UDim2.new(0, 200, 1, 0)
-		frame.Position = UDim2.new(0, 10, 0, 0)
-		frame.AnchorPoint = Vector2.new(0, 0.5)
-		frame.Position = UDim2.new(0, 10, 0.5, 0)
+		frame.AnchorPoint = Vector2.new(0.5, 1)
+		frame.Position = UDim2.new(0.5, 0, 1, -12)
+		frame.Size = UDim2.new(0, 300, 0, 200)
 
 		local layout = Instance.new("UIListLayout", frame)
 		layout.FillDirection = Enum.FillDirection.Vertical
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-		layout.VerticalAlignment = Enum.VerticalAlignment.Center
-		layout.Padding = UDim.new(0, 4)
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+		layout.Padding = UDim.new(0, 3)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
 
 		local function makeLabel(order)
 			local lbl = Instance.new("TextLabel", frame)
 			lbl.BackgroundTransparency = 1
-			lbl.Size = UDim2.new(0, 200, 0, 18)
-			lbl.TextXAlignment = Enum.TextXAlignment.Left
+			lbl.Size = UDim2.new(1, 0, 0, 18)
+			lbl.TextXAlignment = Enum.TextXAlignment.Center
 			lbl.Font = Enum.Font.GothamBold
 			lbl.TextSize = 14
 			lbl.TextStrokeTransparency = 0.5
 			lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+			lbl.RichText = true
 			lbl.Text = ""; lbl.Visible = false
 			lbl.LayoutOrder = order
 			return lbl
 		end
 
 		local titleLbl = makeLabel(0)
-		titleLbl.Text    = "vyron.cc"
-		titleLbl.Visible = true
-		titleLbl.TextColor3 = HUD_C['Title Color'] or Color3.fromRGB(255,255,255)
+		local lblSA    = makeLabel(1)
+		local lblCL    = makeLabel(2)
+		local lblRF    = makeLabel(3)
+		local lblSM    = makeLabel(4)
+		local lblIR    = makeLabel(5)
+		local lblSPD   = makeLabel(6)
+		local lblESP   = makeLabel(7)
 
-		local lblSA  = makeLabel(1)
-		local lblCL  = makeLabel(2)
-		local lblRF  = makeLabel(3)
-		local lblSM  = makeLabel(4)
-		local lblIR  = makeLabel(5)
-		local lblSPD = makeLabel(6)
-		local lblESP = makeLabel(7)
+		local function rgb(c)
+			return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
+		end
+
+		local function fmt(name, targetName)
+			local FC = rgb(HUD_C['Feature Color'] or Color3.fromRGB(255,255,255))
+			local AC = rgb(HUD_C['Active Color']  or Color3.fromRGB(100,255,100))
+			if targetName then
+				return string.format('<font color="%s">%s </font><font color="%s">(%s)</font>', FC, name, AC, targetName)
+			end
+			return string.format('<font color="%s">%s</font>', FC, name)
+		end
 
 		local function getTargetName()
 			local char = nil
-			if camLocked and camTarget and camTarget.Parent then
-				char = camTarget.Parent
-			elseif isLocking and currentTarget and currentTarget.Parent then
-				char = currentTarget.Parent
-			end
+			if camLocked and camTarget and camTarget.Parent then char = camTarget.Parent
+			elseif isLocking and currentTarget and currentTarget.Parent then char = currentTarget.Parent end
 			if not char then return nil end
 			local p = Players:GetPlayerFromCharacter(char)
 			return p and p.Name or char.Name
 		end
 
-		local function fmtFeature(name, targetName)
-			local FC = HUD_C['Feature Color'] or Color3.fromRGB(255,255,255)
-			local AC = HUD_C['Active Color']  or Color3.fromRGB(100,255,100)
-			if targetName then
-				return string.format('<font color="rgb(%d,%d,%d)">%s </font><font color="rgb(%d,%d,%d)">(%s)</font>',
-					math.floor(FC.R*255), math.floor(FC.G*255), math.floor(FC.B*255), name,
-					math.floor(AC.R*255), math.floor(AC.G*255), math.floor(AC.B*255), targetName)
-			else
-				return string.format('<font color="rgb(%d,%d,%d)">%s</font>',
-					math.floor(FC.R*255), math.floor(FC.G*255), math.floor(FC.B*255), name)
-			end
-		end
-
-		titleLbl.TextColor3 = HUD_C['Title Color'] or Color3.fromRGB(255,255,255)
-
 		RunService.Heartbeat:Connect(function()
 			if isShutdown then return end
+			local TC = HUD_C['Title Color']   or Color3.fromRGB(255,255,255)
 			local tname = getTargetName()
-			local FC = HUD_C['Feature Color'] or Color3.fromRGB(255,255,255)
 
-			titleLbl.TextColor3 = HUD_C['Title Color'] or Color3.fromRGB(255,255,255)
+			-- title: always visible
+			titleLbl.Visible = true
+			titleLbl.Text = string.format('<font color="%s">vyron.cc</font>', rgb(TC))
 
-			if SA and SA['Enabled'] then
-				lblSA.Visible = true; lblSA.RichText = true
-				lblSA.Text = fmtFeature("Silent Aim", isLocking and tname or nil)
+			-- Silent Aim: only show when actively locked on
+			if SA['Enabled'] and isLocking then
+				lblSA.Visible = true
+				lblSA.Text = fmt("Silent Aim", tname)
 			else lblSA.Visible = false end
 
-			if CL_C and CL_C['Enabled'] then
-				lblCL.Visible = true; lblCL.RichText = true
-				lblCL.Text = fmtFeature("Cam Lock", camLocked and tname or nil)
+			-- Cam Lock: only show when actively locked
+			if CL_C['Enabled'] and camLocked then
+				lblCL.Visible = true
+				lblCL.Text = fmt("Cam Lock", tname)
 			else lblCL.Visible = false end
 
-			if CFG['Rapid Fire'] and CFG['Rapid Fire']['Enabled'] then
-				lblRF.Visible = true; lblRF.RichText = false
-				lblRF.Text = "Rapid Fire"; lblRF.TextColor3 = FC
-			else lblRF.Visible = false end
-
-			if CFG['Spread Modifier'] and CFG['Spread Modifier']['Enabled'] then
-				lblSM.Visible = true; lblSM.RichText = false
-				lblSM.Text = "Spread Mod"; lblSM.TextColor3 = FC
-			else lblSM.Visible = false end
-
-			if CFG['Infinite Range'] and CFG['Infinite Range']['Enabled'] then
-				lblIR.Visible = true; lblIR.RichText = false
-				lblIR.Text = "Inf Range"; lblIR.TextColor3 = FC
-			else lblIR.Visible = false end
-
-			if SPD_C and SPD_C['Enabled'] then
-				lblSPD.Visible = true; lblSPD.RichText = false
-				lblSPD.Text = "WalkSpeed"; lblSPD.TextColor3 = FC
+			-- Speed: only show when toggled on
+			if SPD_C['Enabled'] and speedEnabled then
+				lblSPD.Visible = true
+				lblSPD.Text = fmt("WalkSpeed", nil)
 			else lblSPD.Visible = false end
 
-			if ESP_C and ESP_C['Enabled'] then
-				lblESP.Visible = true; lblESP.RichText = false
-				lblESP.Text = "ESP"; lblESP.TextColor3 = FC
+			-- Rapid Fire: only show while mouse is held (mouse1 down)
+			local rfActive = CFG['Rapid Fire']['Enabled'] and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+			if rfActive then
+				lblRF.Visible = true
+				lblRF.Text = fmt("Rapid Fire", nil)
+			else lblRF.Visible = false end
+
+			-- Spread Mod: show when enabled (always active passively)
+			if CFG['Spread Modifier']['Enabled'] then
+				lblSM.Visible = true
+				lblSM.Text = fmt("Spread Mod", nil)
+			else lblSM.Visible = false end
+
+			-- Inf Range: show when enabled
+			if CFG['Infinite Range']['Enabled'] then
+				lblIR.Visible = true
+				lblIR.Text = fmt("Inf Range", nil)
+			else lblIR.Visible = false end
+
+			-- ESP: show when enabled
+			if ESP_C['Enabled'] then
+				lblESP.Visible = true
+				lblESP.Text = fmt("ESP", nil)
 			else lblESP.Visible = false end
 		end)
 	end
