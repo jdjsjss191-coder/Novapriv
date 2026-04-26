@@ -1,3 +1,4 @@
+
 assert(shared.VyronNew, "[Vyron] Config not found -- run vyronconfig.lua first.")
 local CFG = shared.VyronNew
 
@@ -922,8 +923,10 @@ end
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
+	local kc = input.KeyCode
 
-	if input.KeyCode == Enum.KeyCode[Binds['Shutdown']:upper()] then
+	-- Shutdown (always first, exits early since everything is destroyed)
+	if kc == Enum.KeyCode[Binds['Shutdown']:upper()] then
 		isShutdown = true
 		pcall(function()
 			setreadonly(getrawmetatable(game), false)
@@ -948,25 +951,26 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode[Binds['ESP']:upper()] then
+	-- ESP toggle
+	if kc == Enum.KeyCode[Binds['ESP']:upper()] then
 		ESP_C['Enabled'] = not ESP_C['Enabled']
 		if not ESP_C['Enabled'] then for _, e in pairs(espLabels) do e.tag.Visible = false end end
-		return
 	end
 
-	if input.KeyCode == Enum.KeyCode[Binds['Speed']:upper()] then
+	-- Speed toggle
+	if kc == Enum.KeyCode[Binds['Speed']:upper()] then
 		speedEnabled = not speedEnabled
 		if not speedEnabled then local hum = getHumanoid(); if hum then hum.WalkSpeed = 16 end end
-		return
 	end
 
-	if SA['Enabled'] and Binds['Auto Shoot'] and input.KeyCode == Enum.KeyCode[Binds['Auto Shoot']:upper()] then
+	-- Auto Shoot toggle
+	if SA['Enabled'] and Binds['Auto Shoot'] and kc == Enum.KeyCode[Binds['Auto Shoot']:upper()] then
 		local AS = SA['Auto Shoot']; if AS then AS['Enabled'] = not AS['Enabled'] end
-		return
 	end
 
+	-- Camera Lock toggle (Target mode only)
 	if CL_C['Enabled'] and CL_C['Target Mode'] ~= 'Automatic'
-		and input.KeyCode == Enum.KeyCode[Binds['Camera Lock']:upper()] then
+		and kc == Enum.KeyCode[Binds['Camera Lock']:upper()] then
 		if camLocked then
 			camLocked = false; camTarget = nil
 		else
@@ -975,12 +979,11 @@ UserInputService.InputBegan:Connect(function(input, processed)
 				if best then camLocked = true; camTarget = best end
 			end
 		end
-		return
 	end
 
 	-- Trigger Bot toggle (Target mode only)
 	if TB_C and TB_C['Enabled'] and TB_C['Target Mode'] ~= 'Automatic'
-		and Binds['Trigger Bot'] and input.KeyCode == Enum.KeyCode[Binds['Trigger Bot']:upper()] then
+		and Binds['Trigger Bot'] and kc == Enum.KeyCode[Binds['Trigger Bot']:upper()] then
 		if tbActive then
 			tbActive = false; tbTarget = nil
 		else
@@ -1007,25 +1010,27 @@ UserInputService.InputBegan:Connect(function(input, processed)
 				if best then tbTarget = best; tbActive = true end
 			end
 		end
-		return
 	end
 
-	if input.KeyCode ~= Enum.KeyCode[Binds['Silent Aim']:upper()] then return end
-	if not SA['Enabled'] or SA['Target Mode'] == 'Automatic' then return end
-	if saWantsLock then
-		saWantsLock = false; isLocking = false
-		currentTarget = nil; lastVisibleTarget = nil; saLockedPlayer = nil
-	else
-		if isHoldingKnife() then return end
-		saWantsLock = true
-		local target = findClosestTarget()
-		if target then
-			currentTarget = target; lastVisibleTarget = target; isLocking = true
-			local rp = Players:GetPlayerFromCharacter(target.Parent)
-			if rp then saLockedPlayer = rp
-			else for _, proxy in pairs(BotProxies) do
-				if proxy.Character == target.Parent then saLockedPlayer = proxy; break end
-			end end
+	-- Silent Aim toggle (Target mode only)
+	if SA['Enabled'] and SA['Target Mode'] ~= 'Automatic'
+		and kc == Enum.KeyCode[Binds['Silent Aim']:upper()] then
+		if saWantsLock then
+			saWantsLock = false; isLocking = false
+			currentTarget = nil; lastVisibleTarget = nil; saLockedPlayer = nil
+		else
+			if not isHoldingKnife() then
+				saWantsLock = true
+				local target = findClosestTarget()
+				if target then
+					currentTarget = target; lastVisibleTarget = target; isLocking = true
+					local rp = Players:GetPlayerFromCharacter(target.Parent)
+					if rp then saLockedPlayer = rp
+					else for _, proxy in pairs(BotProxies) do
+						if proxy.Character == target.Parent then saLockedPlayer = proxy; break end
+					end end
+				end
+			end
 		end
 	end
 end)
