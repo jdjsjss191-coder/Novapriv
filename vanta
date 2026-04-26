@@ -616,6 +616,17 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
+	-- CAMLOCK automatic targeting (must run before refreshESP so color is correct)
+	if CL_C and CL_C['Enabled'] and CL_C['Target Mode'] == 'Automatic' then
+		if isHoldingKnife() then
+			camLocked = false; camTarget = nil
+		else
+			local best = clFindClosest()
+			if best then camLocked = true; camTarget = best
+			else camLocked = false; camTarget = nil end
+		end
+	end
+
 	updateFOV()
 	refreshESP()
 end)
@@ -792,16 +803,7 @@ RunService.RenderStepped:Connect(function()
 		CLFovCircle.Visible = false
 	end
 
-	-- Automatic mode: always track closest
-	if CL_C['Target Mode'] == 'Automatic' then
-		if isHoldingKnife() then
-			camLocked = false; camTarget = nil
-		else
-			local best = clFindClosest()
-			if best then camLocked = true; camTarget = best
-			else camLocked = false; camTarget = nil end
-		end
-	end
+	-- Automatic mode handled in main render loop
 
 	if not camLocked or not camTarget then return end
 	if isHoldingKnife() then return end
@@ -973,3 +975,4 @@ shared.VyronCleanup = function()
 end
 
 print("[Vyron] Ready.")
+
