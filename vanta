@@ -711,8 +711,22 @@ do
 					if allowed then tool:Activate() end
 				end
 			end
+			
+			-- Determine cooldown based on Da Hood mode
 			local cd = rf['Cooldown'] or 0
-			if cd > 0 then task.wait(cd) else task.wait() end
+			if rf['Da Hood Mode'] and rf['Da Hood Mode']['Enabled'] then
+				cd = rf['Da Hood Mode']['Cooldown'] or -0.1
+			end
+			
+			if cd > 0 then 
+				task.wait(cd) 
+			elseif cd < 0 then
+				-- Negative cooldown = super rapid fire for Da Hood
+				-- Use RunService for maximum speed
+				RunService.RenderStepped:Wait()
+			else 
+				task.wait() 
+			end
 		end
 	end)
 end
@@ -807,10 +821,52 @@ do
 			end)
 		end
 		
-		-- Apply immediately
+		-- Hitbox Expander
+		if ARS_C['Hitbox Expander'] and ARS_C['Hitbox Expander']['Enabled'] then
+			local function applyHitboxExpander()
+				pcall(function()
+					local size = ARS_C['Hitbox Expander']['Size'] or 13
+					local transparency = ARS_C['Hitbox Expander']['Transparency'] or 10
+					local hitboxSize = Vector3.new(size, size, size)
+					
+					for _, v in pairs(Players:GetPlayers()) do
+						if v.Name ~= LocalPlayer.Name and v.Character then
+							local char = v.Character
+							
+							-- Expand specific body parts
+							local parts = {
+								'RightUpperLeg',
+								'LeftUpperLeg', 
+								'HeadHB',
+								'HumanoidRootPart'
+							}
+							
+							for _, partName in ipairs(parts) do
+								local part = char:FindFirstChild(partName)
+								if part then
+									part.CanCollide = false
+									part.Transparency = transparency
+									part.Size = hitboxSize
+								end
+							end
+						end
+					end
+				end)
+			end
+			
+			-- Apply hitbox expander continuously
+			task.spawn(function()
+				while ARS_C and ARS_C['Enabled'] and ARS_C['Hitbox Expander'] and ARS_C['Hitbox Expander']['Enabled'] do
+					applyHitboxExpander()
+					task.wait(1)
+				end
+			end)
+		end
+		
+		-- Apply weapon modifications immediately
 		applyArsenalMods()
 		
-		-- Keep applying every few seconds to maintain changes
+		-- Keep applying weapon modifications every few seconds
 		task.spawn(function()
 			while ARS_C and ARS_C['Enabled'] do
 				task.wait(2)
