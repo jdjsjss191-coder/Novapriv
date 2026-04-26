@@ -618,6 +618,39 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================================
+--  SPREAD MODIFIER
+-- ============================================================================
+do
+	local SM_C = CFG['Spread Modifier']
+	if SM_C and SM_C['Enabled'] and hookfunction then
+		local oldRandom
+		oldRandom = hookfunction(math.random, function(...)
+			local args = {...}
+			if checkcaller() then return oldRandom(...) end
+			local isSpread = (#args == 0)
+				or (args[1] and args[2] and args[1] < 0 and args[2] > 0 and math.abs(args[1]) <= 0.15)
+			if isSpread then
+				local cfg = CFG['Spread Modifier']
+				if not cfg or not cfg['Enabled'] then return oldRandom(...) end
+				if cfg['Specific Weapons']['Enabled'] then
+					local char = LocalPlayer.Character
+					local tool = char and char:FindFirstChildOfClass('Tool')
+					if not tool then return oldRandom(...) end
+					local found = false
+					for _, w in ipairs(cfg['Specific Weapons']['Weapons']) do
+						local clean = w:gsub('%[',''):gsub('%]',''):lower()
+						if tool.Name:lower():find(clean, 1, true) then found = true; break end
+					end
+					if not found then return oldRandom(...) end
+				end
+				return oldRandom(...) * (cfg['Amount'] or 0)
+			end
+			return oldRandom(...)
+		end)
+	end
+end
+
+-- ============================================================================
 --  INPUT / KEYBINDS
 -- ============================================================================
 UserInputService.InputBegan:Connect(function(input, processed)
