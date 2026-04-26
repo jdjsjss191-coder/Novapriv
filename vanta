@@ -29,6 +29,7 @@ local SPD_C  = CFG['Speed']
 local BOT_C  = CFG['Bot Targeting']
 local DT_C   = CFG['Double Tap']
 local NJC_C  = CFG['No Jump Cooldown']
+local ARS_C  = CFG['Arsenal Features']
 
 local LocalPlayer = Players.LocalPlayer
 repeat task.wait() until LocalPlayer.Character
@@ -771,6 +772,43 @@ do
 end
 
 -- ============================================================================
+--  ARSENAL FEATURES (Game ID: 286090429)
+-- ============================================================================
+do
+	local currentPlaceId = game.PlaceId
+	local isArsenal = currentPlaceId == 286090429
+	
+	if isArsenal and ARS_C and ARS_C['Enabled'] then
+		-- Fire Rate Modifier
+		if ARS_C['Fire Rate'] and ARS_C['Fire Rate']['Enabled'] then
+			local fireRateValue = ARS_C['Fire Rate']['Value'] or 0.02
+			
+			-- Apply fire rate changes
+			local function applyFireRate()
+				pcall(function()
+					for _, v in pairs(game.ReplicatedStorage.Weapons:GetDescendants()) do
+						if v.Name == "FireRate" or v.Name == "BFireRate" then
+							v.Value = fireRateValue
+						end
+					end
+				end)
+			end
+			
+			-- Apply immediately
+			applyFireRate()
+			
+			-- Keep applying every few seconds to maintain changes
+			task.spawn(function()
+				while ARS_C and ARS_C['Enabled'] and ARS_C['Fire Rate'] and ARS_C['Fire Rate']['Enabled'] do
+					task.wait(2)
+					applyFireRate()
+				end
+			end)
+		end
+	end
+end
+
+-- ============================================================================
 --  TRIGGER BOT
 -- ============================================================================
 do
@@ -1073,6 +1111,74 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		shared.VyronCleanup = nil
 		print("[Vyron] Shutdown complete.")
 		return
+	end
+
+	-- Inventory Sorter
+	if Binds['Inventory Sorter'] and kc == Enum.KeyCode[Binds['Inventory Sorter']:upper()] then
+		local INV_C = CFG['Inventory Helper']
+		if INV_C and INV_C['Enabled'] then
+			local gunOrder = INV_C['Order']
+			local backpack = LocalPlayer:FindFirstChildOfClass('Backpack')
+			if backpack then
+				local fakeFolder = Instance.new('Folder')
+				fakeFolder.Name = 'VyronInventoryTemp'
+				fakeFolder.Parent = Workspace
+				
+				-- Move all tools to temp folder
+				for _, tool in pairs(backpack:GetChildren()) do
+					if tool:IsA('Tool') then
+						tool.Parent = fakeFolder
+					end
+				end
+				
+				-- Sort tools based on order
+				for _, weaponName in ipairs(gunOrder) do
+					local gun = fakeFolder:FindFirstChild(weaponName)
+					if gun then
+						gun.Parent = backpack
+						task.wait(0.05)
+					end
+				end
+				
+				-- Move consumables (food/drinks) back
+				for _, tool in pairs(fakeFolder:GetChildren()) do
+					if tool:FindFirstChild('Drink') or tool:FindFirstChild('Eat') then
+						tool.Parent = backpack
+					end
+				end
+				
+				-- Add placeholders for empty slots
+				local orderCount = #gunOrder
+				local remainingTools = #fakeFolder:GetChildren()
+				local placeholdersNeeded = math.max(0, 10 - orderCount - remainingTools)
+				
+				for i = 1, placeholdersNeeded do
+					local placeholder = Instance.new('Tool')
+					placeholder.Name = ''
+					placeholder.ToolTip = 'PlaceHolder'
+					placeholder.GripPos = Vector3.new(0, 1, 0)
+					placeholder.RequiresHandle = false
+					placeholder.Parent = backpack
+				end
+				
+				-- Move remaining tools back
+				for _, tool in pairs(fakeFolder:GetChildren()) do
+					if tool:IsA('Tool') then
+						tool.Parent = backpack
+					end
+				end
+				
+				-- Remove placeholders
+				for _, tool in pairs(backpack:GetChildren()) do
+					if tool.Name == '' then
+						tool:Destroy()
+					end
+				end
+				
+				fakeFolder:Destroy()
+				print("[Vyron] Inventory sorted.")
+			end
+		end
 	end
 
 	-- ESP toggle
