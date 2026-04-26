@@ -59,6 +59,28 @@ local function isPlayerKnockedOrKO(player)
 	return false
 end
 
+local function isPlayerGrabbed(player)
+	if not Checks['Grabbed'] then return false end
+	if not player.Character then return false end
+	return player.Character:FindFirstChild('GRABBING_CONSTRAINT') ~= nil
+end
+
+local function isChatFocused()
+	if not Checks['Chat Focused'] then return false end
+	local chatBar = LocalPlayer:FindFirstChild("PlayerGui")
+	if chatBar then
+		chatBar = chatBar:FindFirstChild("Chat")
+		if chatBar then
+			chatBar = chatBar:FindFirstChild("Frame")
+			if chatBar then
+				chatBar = chatBar:FindFirstChild("ChatBarParentFrame")
+				if chatBar and chatBar.Visible then return true end
+			end
+		end
+	end
+	return false
+end
+
 local function isBlacklisted(player)
 	local bl = CFG['Blacklist']
 	if not bl or not bl['Enabled'] then return false end
@@ -93,6 +115,10 @@ local function canSeeTarget(part)
 	local origin = Camera.CFrame.Position
 	local result = Workspace:Raycast(origin, part.Position - origin, rayParams)
 	return result == nil or result.Instance:IsDescendantOf(char)
+end
+
+local function shouldSkipTarget()
+	return isChatFocused()
 end
 
 local function getBodyParts(character)
@@ -204,6 +230,7 @@ local function clIsKnocked(char)
 end
 
 local function clFindClosest()
+	if shouldSkipTarget() then return nil end
 	local mp       = UserInputService:GetMouseLocation()
 	local fovCfg   = CL_C['FOV'] or {}
 	local fovLimit = (fovCfg['Enabled'] and fovCfg['Size']) or math.huge
@@ -213,6 +240,7 @@ local function clFindClosest()
 		if not isBot and isBlacklisted(target) then continue end
 		local char = target.Character
 		if not char or clIsKnocked(char) then continue end
+		if not isBot and isPlayerGrabbed(target) then continue end
 		local hum = char:FindFirstChildOfClass('Humanoid')
 		if not hum or hum.Health <= 0 then continue end
 		local hrp = char:FindFirstChild('HumanoidRootPart')
@@ -227,7 +255,7 @@ local function clFindClosest()
 end
 
 local function findClosestTarget()
-	if isHoldingKnife() then return nil end
+	if isHoldingKnife() or shouldSkipTarget() then return nil end
 	local best, bd = nil, math.huge
 	local mp       = UserInputService:GetMouseLocation()
 	local fovLimit = (SA['FOV']['Enabled'] and SA['FOV']['Size']) or math.huge
@@ -238,7 +266,7 @@ local function findClosestTarget()
 		if not isBot and isBlacklisted(target) then continue end
 		local char = target.Character
 		if not char or not char:FindFirstChild('HumanoidRootPart') then continue end
-		if isBot and isBotDead(target) or (not isBot and isPlayerKnockedOrKO(target)) then continue end
+		if isBot and isBotDead(target) or (not isBot and (isPlayerKnockedOrKO(target) or isPlayerGrabbed(target))) then continue end
 		local hrp = char:FindFirstChild('HumanoidRootPart')
 		if hrp and (hrp.Position - camPos).Magnitude > maxDist then continue end
 		for _, part in pairs(getBodyParts(char)) do
@@ -295,11 +323,17 @@ else
 	grm.__index = function(self, key)
 		if not checkcaller() and self == Mouse and SA and SA['Enabled'] then
 			if key == "Hit" or key == "Target" then
-				if isHoldingKnife() or not currentTarget then return oldIndex(self, key) end
+				if isHoldingKnife() or not currentTarget or shouldSkipTarget() then return oldIndex(self, key) end
+				-- Hit Chance check
+				if SA['Hit Chance'] and SA['Hit Chance'] < 100 then
+					if math.random(1, 100) > SA['Hit Chance'] then
+						return oldIndex(self, key)
+					end
+				end
 				local char = currentTarget.Parent
 				if not char then return oldIndex(self, key) end
 				local rp = Players:GetPlayerFromCharacter(char)
-				if rp and isPlayerKnockedOrKO(rp) then return oldIndex(self, key) end
+				if rp and (isPlayerKnockedOrKO(rp) or isPlayerGrabbed(rp)) then return oldIndex(self, key) end
 				if not rp then
 					local hum = char:FindFirstChildOfClass('Humanoid')
 					if not hum or hum.Health <= 0 then return oldIndex(self, key) end
@@ -512,7 +546,7 @@ RunService.RenderStepped:Connect(function()
 
 	-- Silent Aim: Automatic mode
 	if SA['Enabled'] and SA['Target Mode'] == 'Automatic' then
-		if isHoldingKnife() then
+		if isHoldingKnife() or shouldSkipTarget() then
 			currentTarget = nil; isLocking = false; lastVisibleTarget = nil
 		else
 			local fovLimit = (SA['FOV']['Enabled'] and SA['FOV']['Size']) or math.huge
@@ -525,7 +559,7 @@ RunService.RenderStepped:Connect(function()
 				if not isBot and isBlacklisted(target) then continue end
 				local char = target.Character
 				if not char or not char:FindFirstChild('HumanoidRootPart') then continue end
-				if isBot and isBotDead(target) or (not isBot and isPlayerKnockedOrKO(target)) then continue end
+				if isBot and isBotDead(target) or (not isBot and (isPlayerKnockedOrKO(target) or isPlayerGrabbed(target))) then continue end
 				local hrp = char:FindFirstChild('HumanoidRootPart')
 				if hrp and (hrp.Position - camPos).Magnitude > maxDist then continue end
 				local sp, on = Camera:WorldToViewportPoint(hrp.Position)
@@ -546,7 +580,7 @@ RunService.RenderStepped:Connect(function()
 
 	-- Silent Aim: Target mode acquisition (continuously find target while saWantsLock is true)
 	if SA['Enabled'] and SA['Target Mode'] ~= 'Automatic' and saWantsLock and not isLocking then
-		if not isHoldingKnife() then
+		if not isHoldingKnife() and not shouldSkipTarget() then
 			local target = findClosestTarget()
 			if target then
 				currentTarget = target; lastVisibleTarget = target; isLocking = true
@@ -599,7 +633,7 @@ RunService.RenderStepped:Connect(function()
 
 	-- Camera Lock: Automatic targeting
 	if CL_C['Enabled'] and CL_C['Target Mode'] == 'Automatic' then
-		if isHoldingKnife() then
+		if isHoldingKnife() or shouldSkipTarget() then
 			camLocked = false; camTarget = nil
 		else
 			local best = clFindClosest()
@@ -723,36 +757,16 @@ end
 -- ============================================================================
 do
 	if NJC_C and NJC_C['Enabled'] then
-		local mt = getrawmetatable(game)
-		local oldNamecall = mt.__namecall
-		setreadonly(mt, false)
-		mt.__namecall = newcclosure(function(self, ...)
-			local method = getnamecallmethod()
-			if not checkcaller() and method == "FireServer" then
-				local args = {...}
-				if tostring(self) == "Action" and args[1] == "Jump" then
-					-- Remove jump cooldown by allowing immediate jumps
-					return oldNamecall(self, ...)
-				end
+		local gmt = getrawmetatable(game)
+		setreadonly(gmt, false)
+		local old = gmt.__newindex
+		gmt.__newindex = newcclosure(function(t, i, v)
+			if i == "JumpPower" then
+				return old(t, i, 50)
 			end
-			return oldNamecall(self, ...)
+			return old(t, i, v)
 		end)
-		setreadonly(mt, true)
-		
-		-- Also modify humanoid jump cooldown locally
-		RunService.Heartbeat:Connect(function()
-			if not NJC_C['Enabled'] then return end
-			local char = LocalPlayer.Character
-			if char then
-				local hum = char:FindFirstChildOfClass('Humanoid')
-				if hum then
-					-- Reset jump cooldown by setting UseJumpPower
-					pcall(function()
-						hum.UseJumpPower = true
-					end)
-				end
-			end
-		end)
+		setreadonly(gmt, true)
 	end
 end
 
