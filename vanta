@@ -796,88 +796,55 @@ do
 end
 
 -- ============================================================================
---  HUD  (Mode: 'HUD' = classic right-side labels | 'ArrayList' = staircase)
+--  HUD
 -- ============================================================================
 local hudGui = nil
 
 do
-	local HUD_C    = CFG['General']['HUD']
-	local HUD_MODE = HUD_C['Mode'] or 'ArrayList'   -- 'HUD' or 'ArrayList'
-	if not HUD_C['Enabled'] then goto skipHud end
-
-	for _, gui in ipairs({game:GetService("CoreGui"), LocalPlayer:WaitForChild("PlayerGui")}) do
-		local old = gui:FindFirstChild("VyronHUD")
-		if old then pcall(function() old:Destroy() end) end
-	end
-
-	hudGui = Instance.new("ScreenGui")
-	hudGui.Name = "VyronHUD"; hudGui.ResetOnSpawn = false
-	hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
-	pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
-	if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
-
-	-- ── shared helpers ────────────────────────────────────────────────────
-	local function rgb(c)
-		return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
-	end
-	local function getTargetName()
-		local char
-		if camLocked and camTarget and camTarget.Parent then char = camTarget.Parent
-		elseif isLocking and currentTarget and currentTarget.Parent then char = currentTarget.Parent
-		elseif tbActive and tbTarget and tbTarget.Character then char = tbTarget.Character end
-		if not char then return nil end
-		local p = Players:GetPlayerFromCharacter(char)
-		return p and p.Name or char.Name
-	end
-
-	-- ── feature state table (name → active?) evaluated each frame ────────
-	local function getActiveFeatures()
-		local tname = getTargetName()
-		local list  = {}
-		local rfOn  = CFG['Rapid Fire']['Enabled'] and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-		local function push(label, on)
-			if on then list[#list+1] = label end
+	local HUD_C = CFG['General']['HUD']
+	if HUD_C['Enabled'] then
+		for _, gui in ipairs({game:GetService("CoreGui"), LocalPlayer:WaitForChild("PlayerGui")}) do
+			local old = gui:FindFirstChild("VyronHUD")
+			if old then pcall(function() old:Destroy() end) end
 		end
-		push("Silent Aim",  SA['Enabled'] and isLocking)
-		push("Cam Lock",    CL_C['Enabled'] and camLocked)
-		push("Trigger Bot", TB_C and TB_C['Enabled'] and tbActive)
-		push("Speed",       SPD_C['Enabled'] and speedEnabled)
-		push("Rapid Fire",  rfOn)
-		push("Spread Mod",  CFG['Spread Modifier']['Enabled'])
-		push("Inf Range",   CFG['Infinite Range']['Enabled'])
-		push("ESP",         ESP_C['Enabled'])
-		return list, tname
-	end
 
-	-- ════════════════════════════════════════════════════════════════════
-	--  MODE: HUD  (classic right-side rich-text labels)
-	-- ════════════════════════════════════════════════════════════════════
-	if HUD_MODE == 'HUD' then
+		hudGui = Instance.new("ScreenGui")
+		hudGui.Name = "VyronHUD"; hudGui.ResetOnSpawn = false
+		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
+		pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
+		if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
 		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
 		frame.AnchorPoint = Vector2.new(1, 0.5)
-		frame.Position    = UDim2.new(1, -10, 0.5, 0)
-		frame.Size        = UDim2.new(0, 0, 0, 0)
+		frame.Position = UDim2.new(1, -10, 0.5, 0)
+		frame.Size = UDim2.new(0, 0, 0, 0)
 		frame.AutomaticSize = Enum.AutomaticSize.Y
 
 		local layout = Instance.new("UIListLayout", frame)
-		layout.FillDirection        = Enum.FillDirection.Vertical
-		layout.HorizontalAlignment  = Enum.HorizontalAlignment.Right
-		layout.VerticalAlignment    = Enum.VerticalAlignment.Center
-		layout.Padding              = UDim.new(0, 4)
-		layout.SortOrder            = Enum.SortOrder.LayoutOrder
+		layout.FillDirection = Enum.FillDirection.Vertical
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+		layout.Padding = UDim.new(0, 4)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
 
 		local function makeLabel(size, order)
 			local lbl = Instance.new("TextLabel", frame)
 			lbl.BackgroundTransparency = 1
 			lbl.Size = UDim2.new(0, 0, 0, size + 4)
 			lbl.AutomaticSize = Enum.AutomaticSize.X
-			lbl.Font = Enum.Font.GothamBold; lbl.TextSize = size
+			lbl.Font = Enum.Font.GothamBold
+			lbl.TextSize = size
 			lbl.TextStrokeTransparency = 0.4
-			lbl.TextStrokeColor3 = Color3.fromRGB(0,0,0)
-			lbl.RichText = true; lbl.Text = ""; lbl.Visible = false
+			lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+			lbl.RichText = true
+			lbl.Text = ""; lbl.Visible = false
 			lbl.LayoutOrder = order
 			return lbl
+		end
+
+		local function rgb(c)
+			return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
 		end
 
 		local function fmt(name, targetName)
@@ -887,6 +854,16 @@ do
 				return string.format('<font color="%s">%s </font><font color="%s">(%s)</font>', FC, name, AC, targetName)
 			end
 			return string.format('<font color="%s">%s</font>', FC, name)
+		end
+
+		local function getTargetName()
+			local char
+			if camLocked and camTarget and camTarget.Parent then char = camTarget.Parent
+			elseif isLocking and currentTarget and currentTarget.Parent then char = currentTarget.Parent
+			elseif tbActive and tbTarget and tbTarget.Character then char = tbTarget.Character end
+			if not char then return nil end
+			local p = Players:GetPlayerFromCharacter(char)
+			return p and p.Name or char.Name
 		end
 
 		local titleLbl = makeLabel(24, 0)
@@ -902,7 +879,7 @@ do
 		RunService.Heartbeat:Connect(function()
 			if isShutdown then return end
 			local tname = getTargetName()
-			local TC = HUD_C['Title Color'] or Color3.fromRGB(180,180,180)
+			local TC = HUD_C['Title Color'] or Color3.fromRGB(180, 180, 180)
 			titleLbl.Visible = true
 			titleLbl.Text = string.format('<font color="%s">Vyron</font>', rgb(TC))
 
@@ -910,141 +887,16 @@ do
 			local function set(lbl, on, name, tgt)
 				lbl.Visible = on; if on then lbl.Text = fmt(name, tgt) end
 			end
-			set(lblSA,  SA['Enabled'] and isLocking,                          "Silent Aim",  tname)
-			set(lblCL,  CL_C['Enabled'] and camLocked,                        "Cam Lock",    tname)
-			set(lblTB,  TB_C and TB_C['Enabled'] and tbActive,                "Trigger Bot", tbTarget and tbTarget.Name or nil)
-			set(lblSPD, SPD_C['Enabled'] and speedEnabled,                    "Speed",       nil)
-			set(lblRF,  rfOn,                                                  "Rapid Fire",  nil)
-			set(lblSM,  CFG['Spread Modifier']['Enabled'],                     "Spread Mod",  nil)
-			set(lblIR,  CFG['Infinite Range']['Enabled'],                      "Inf Range",   nil)
-			set(lblESP, ESP_C['Enabled'],                                      "ESP",         nil)
-		end)
-
-	-- ════════════════════════════════════════════════════════════════════
-	--  MODE: ArrayList  (staircase, dark bg tiles, fade in/out)
-	-- ════════════════════════════════════════════════════════════════════
-	else
-		local TweenService = game:GetService("TweenService")
-		local ITEM_H    = 26        -- height of each row
-		local ITEM_PAD  = 2         -- gap between rows
-		local BASE_W    = 160       -- widest tile
-		local STEP      = 14        -- each row is STEP px narrower than the one above
-		local BG_COLOR  = Color3.fromRGB(18, 20, 30)
-		local BG_TRANS  = 0.18
-		local FADE_IN   = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		local FADE_OUT  = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-		local RIGHT_PAD = 14        -- distance from right edge of screen
-
-		-- title label (always visible, sits above the list)
-		local titleFrame = Instance.new("Frame", hudGui)
-		titleFrame.BackgroundTransparency = 1
-		titleFrame.AnchorPoint = Vector2.new(1, 0)
-		titleFrame.Position    = UDim2.new(1, -RIGHT_PAD, 0, 14)
-		titleFrame.Size        = UDim2.new(0, BASE_W, 0, 28)
-
-		local titleLbl = Instance.new("TextLabel", titleFrame)
-		titleLbl.BackgroundTransparency = 1
-		titleLbl.Size     = UDim2.new(1, 0, 1, 0)
-		titleLbl.Font     = Enum.Font.GothamBold
-		titleLbl.TextSize = 20
-		titleLbl.TextXAlignment = Enum.TextXAlignment.Right
-		titleLbl.TextColor3     = HUD_C['Title Color'] or Color3.fromRGB(255,255,255)
-		titleLbl.TextStrokeTransparency = 0.5
-		titleLbl.TextStrokeColor3       = Color3.fromRGB(0,0,0)
-		titleLbl.Text    = "vyron"
-		titleLbl.RichText = false
-
-		-- pool of tile frames (reused each frame)
-		local tiles      = {}   -- [i] = { frame, label, tweenIn, tweenOut, visible }
-		local prevActive = {}   -- previous frame's active list (to detect changes)
-
-		local function getTile(i)
-			if tiles[i] then return tiles[i] end
-			local t = {}
-
-			t.frame = Instance.new("Frame", hudGui)
-			t.frame.BackgroundColor3    = BG_COLOR
-			t.frame.BackgroundTransparency = 1   -- start invisible
-			t.frame.BorderSizePixel     = 0
-			t.frame.AnchorPoint         = Vector2.new(1, 0)
-			t.frame.Size                = UDim2.new(0, BASE_W, 0, ITEM_H)
-			t.frame.ClipsDescendants    = true
-
-			local corner = Instance.new("UICorner", t.frame)
-			corner.CornerRadius = UDim.new(0, 4)
-
-			t.label = Instance.new("TextLabel", t.frame)
-			t.label.BackgroundTransparency = 1
-			t.label.Size     = UDim2.new(1, -10, 1, 0)
-			t.label.Position = UDim2.new(0, 0, 0, 0)
-			t.label.Font     = Enum.Font.Gotham
-			t.label.TextSize = 13
-			t.label.TextXAlignment = Enum.TextXAlignment.Right
-			t.label.TextColor3     = HUD_C['Feature Color'] or Color3.fromRGB(220,220,220)
-			t.label.TextStrokeTransparency = 0.5
-			t.label.TextStrokeColor3       = Color3.fromRGB(0,0,0)
-			t.label.Text    = ""
-			t.label.TextTransparency = 1   -- start invisible
-
-			t.visible = false
-			tiles[i]  = t
-			return t
-		end
-
-		local function fadeIn(t, text, posY, width)
-			t.label.Text = text
-			t.frame.Size = UDim2.new(0, width, 0, ITEM_H)
-			t.frame.Position = UDim2.new(1, -RIGHT_PAD, 0, posY)
-			if not t.visible then
-				t.visible = true
-				-- cancel any running out-tween
-				if t.tweenOut then t.tweenOut:Cancel() end
-				t.tweenIn = TweenService:Create(t.frame, FADE_IN, { BackgroundTransparency = BG_TRANS })
-				local lt   = TweenService:Create(t.label, FADE_IN, { TextTransparency = 0 })
-				t.tweenIn:Play(); lt:Play()
-			end
-		end
-
-		local function fadeOut(t)
-			if t.visible then
-				t.visible = false
-				if t.tweenIn then t.tweenIn:Cancel() end
-				t.tweenOut = TweenService:Create(t.frame, FADE_OUT, { BackgroundTransparency = 1 })
-				local lt    = TweenService:Create(t.label, FADE_OUT, { TextTransparency = 1 })
-				t.tweenOut:Play(); lt:Play()
-			end
-		end
-
-		RunService.Heartbeat:Connect(function()
-			if isShutdown then return end
-
-			local active, tname = getActiveFeatures()
-			local count = #active
-
-			-- update title color live
-			titleLbl.TextColor3 = HUD_C['Title Color'] or Color3.fromRGB(255,255,255)
-
-			-- position title just above the list
-			local listTop = 48
-			titleFrame.Position = UDim2.new(1, -RIGHT_PAD, 0, listTop - 32)
-
-			-- show/update active tiles
-			for i, name in ipairs(active) do
-				local t     = getTile(i)
-				local posY  = listTop + (i - 1) * (ITEM_H + ITEM_PAD)
-				local width = math.max(BASE_W - (i - 1) * STEP, 80)
-				fadeIn(t, name, posY, width)
-			end
-
-			-- hide tiles beyond current count
-			for i = count + 1, #tiles do
-				local t = tiles[i]
-				if t then fadeOut(t) end
-			end
+			set(lblSA,  SA['Enabled'] and isLocking,               "Silent Aim",  tname)
+			set(lblCL,  CL_C['Enabled'] and camLocked,             "Cam Lock",    tname)
+			set(lblTB,  TB_C and TB_C['Enabled'] and tbActive,     "Trigger Bot", tbTarget and tbTarget.Name or nil)
+			set(lblSPD, SPD_C['Enabled'] and speedEnabled,         "Speed",       nil)
+			set(lblRF,  rfOn,                                       "Rapid Fire",  nil)
+			set(lblSM,  CFG['Spread Modifier']['Enabled'],          "Spread Mod",  nil)
+			set(lblIR,  CFG['Infinite Range']['Enabled'],           "Inf Range",   nil)
+			set(lblESP, ESP_C['Enabled'],                           "ESP",         nil)
 		end)
 	end
-
-	::skipHud::
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
