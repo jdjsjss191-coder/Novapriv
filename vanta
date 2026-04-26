@@ -35,6 +35,8 @@ local isLocking         = false
 local saWantsLock       = false
 local lastVisibleTarget = nil
 local saLockedPlayer    = nil
+local camLocked = false
+local camTarget  = nil
 local speedEnabled      = false
 local isShutdown        = false
 
@@ -621,7 +623,6 @@ end)
 --  RAPID FIRE
 -- ============================================================================
 do
-	local RF_C        = CFG['Rapid Fire']
 	local isMouseDown = false
 
 	UserInputService.InputBegan:Connect(function(i, gp)
@@ -654,7 +655,8 @@ do
 					if allowed then tool:Activate() end
 				end
 			end
-			task.wait(rf['Cooldown'] or 0.01)
+			local cd = rf['Cooldown'] or 0
+			if cd > 0 then task.wait(cd) else task.wait() end
 		end
 	end)
 end
@@ -722,6 +724,135 @@ do
 end
 
 -- ============================================================================
+--  CAMERA LOCK
+-- ============================================================================
+local CL_C = CFG['Camera Lock']
+
+local CLFovCircle = Drawing.new("Circle")
+CLFovCircle.Filled       = false
+CLFovCircle.Thickness    = 1
+CLFovCircle.Transparency = 1
+CLFovCircle.NumSides     = 64
+CLFovCircle.Color        = Color3.fromRGB(255, 255, 255)
+CLFovCircle.Visible      = false
+
+local function clIsKnocked(char)
+	if not char then return false end
+	local be = char:FindFirstChild("BodyEffects")
+	if be then
+		local k = be:FindFirstChild("K.O")
+		if k and k.Value then return true end
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		local s = hum:GetState()
+		if s == Enum.HumanoidStateType.Dead
+		or s == Enum.HumanoidStateType.Physics
+		or s == Enum.HumanoidStateType.Ragdoll then return true end
+	end
+	return false
+end
+
+local function clFindClosest()
+	local mp       = UserInputService:GetMouseLocation()
+	local fovCfg   = CL_C['FOV'] or {}
+	local fovLimit = (fovCfg['Enabled'] and fovCfg['Size']) or math.huge
+	local best, bd = nil, math.huge
+	for _, target in ipairs(getAllTargets()) do
+		local isBot = type(target) == 'table' and target._isBot
+		if not isBot and isBlacklisted(target) then continue end
+		local char = target.Character
+		if not char or clIsKnocked(char) then continue end
+		local hum = char:FindFirstChildOfClass('Humanoid')
+		if not hum or hum.Health <= 0 then continue end
+		local hrp = char:FindFirstChild('HumanoidRootPart')
+		if not hrp then continue end
+		local sp, on = Camera:WorldToViewportPoint(hrp.Position)
+		if on and sp.Z > 0 then
+			local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+			if d <= fovLimit and d < bd then bd = d; best = hrp end
+		end
+	end
+	return best
+end
+
+RunService.RenderStepped:Connect(function()
+	if isShutdown or not CL_C['Enabled'] then CLFovCircle.Visible = false; return end
+
+	-- FOV circle
+	local fovCfg = CL_C['FOV'] or {}
+	if fovCfg['Enabled'] and fovCfg['Visible'] then
+		local mp = UserInputService:GetMouseLocation()
+		CLFovCircle.Position = Vector2.new(mp.X, mp.Y)
+		CLFovCircle.Radius   = fovCfg['Size'] or 120
+		CLFovCircle.Color    = fovCfg['Color'] or Color3.fromRGB(255, 255, 255)
+		CLFovCircle.Visible  = true
+	else
+		CLFovCircle.Visible = false
+	end
+
+	-- Automatic mode: always track closest
+	if CL_C['Target Mode'] == 'Automatic' then
+		if isHoldingKnife() then
+			camLocked = false; camTarget = nil
+		else
+			local best = clFindClosest()
+			if best then camLocked = true; camTarget = best
+			else camLocked = false; camTarget = nil end
+		end
+	end
+
+	if not camLocked or not camTarget then return end
+	if isHoldingKnife() then return end
+
+	local char = camTarget.Parent
+	if not char or clIsKnocked(char) then
+		camLocked = false; camTarget = nil; return
+	end
+
+	-- resolve hit part
+	local hitPart = CL_C['Hit Part'] or 'HumanoidRootPart'
+	local aimPart = camTarget
+	if hitPart == 'Closest Part' then
+		local mp2 = UserInputService:GetMouseLocation()
+		local best, bd = nil, math.huge
+		for _, part in ipairs(getBodyParts(char)) do
+			local sp, on = Camera:WorldToViewportPoint(part.Position)
+			if on and sp.Z > 0 then
+				local d = (UserInputService:GetMouseLocation() - Vector2.new(sp.X, sp.Y)).Magnitude
+				if d < bd then best = part; bd = d end
+			end
+		end
+		if best then aimPart = best end
+	else
+		local found = char:FindFirstChild(hitPart)
+		if found then aimPart = found end
+	end
+
+	-- prediction: XYZ velocity-based
+	local pred    = CL_C['Prediction'] or {}
+	local px      = pred['X'] or 0
+	local py      = pred['Y'] or 0
+	local pz      = pred['Z'] or 0
+	local vel     = Vector3.new(0, 0, 0)
+	pcall(function() vel = camTarget.AssemblyLinearVelocity end)
+	local dist    = (aimPart.Position - Camera.CFrame.Position).Magnitude
+	local scale   = math.clamp(dist / 100, 0.05, 1)
+	local aimPos  = aimPart.Position + Vector3.new(vel.X * px * scale, vel.Y * py * scale, vel.Z * pz * scale)
+
+	local targetCF = CFrame.new(Camera.CFrame.Position, aimPos)
+
+	-- smoothness: 0 = instant lock (blatant), 0.01-0.99 = lerp (legit), decimals supported
+	local smooth = math.clamp(tonumber(CL_C['Smoothness']) or 0, 0, 0.99)
+	if smooth <= 0 then
+		Camera.CFrame = targetCF
+	else
+		local alpha = 1 - smooth
+		Camera.CFrame = Camera.CFrame:Lerp(targetCF, alpha)
+	end
+end)
+
+-- ============================================================================
 --  INPUT / KEYBINDS
 -- ============================================================================
 UserInputService.InputBegan:Connect(function(input, processed)
@@ -739,6 +870,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		-- clear state
 		currentTarget = nil; isLocking = false; saWantsLock = false
 		lastVisibleTarget = nil; saLockedPlayer = nil; speedEnabled = false
+		camLocked = false; camTarget = nil
 		-- restore walkspeed
 		pcall(function()
 			local hum = getHumanoid()
@@ -749,6 +881,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		espLabels = {}
 		pcall(function() espGui:Destroy() end)
 		pcall(function() SAFovCircle:Remove() end)
+		pcall(function() CLFovCircle:Remove() end)
 		shared.VyronCleanup = nil
 		print("[Vyron] Shutdown complete.")
 		return
@@ -759,6 +892,19 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		ESP_C['Enabled'] = not ESP_C['Enabled']
 		if not ESP_C['Enabled'] then
 			for _, e in pairs(espLabels) do e.tag.Visible = false end
+		end
+		return
+	end
+
+	-- Camera Lock toggle (Target mode only)
+	if CL_C['Enabled'] and CL_C['Target Mode'] ~= 'Automatic'
+		and input.KeyCode == Enum.KeyCode[Binds['Camera Lock']:upper()] then
+		if camLocked then
+			camLocked = false; camTarget = nil
+		else
+			if isHoldingKnife() then return end
+			local best = clFindClosest()
+			if best then camLocked = true; camTarget = best end
 		end
 		return
 	end
@@ -822,6 +968,7 @@ shared.VyronCleanup = function()
 	espLabels = {}
 	pcall(function() espGui:Destroy() end)
 	pcall(function() SAFovCircle:Remove() end)
+	pcall(function() CLFovCircle:Remove() end)
 end
 
 print("[Vyron] Ready.")
