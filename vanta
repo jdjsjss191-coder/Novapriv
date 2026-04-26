@@ -708,7 +708,7 @@ do
 		local layout = Instance.new("UIListLayout", frame)
 		layout.FillDirection = Enum.FillDirection.Vertical
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+		layout.VerticalAlignment = Enum.VerticalAlignment.Top
 		layout.Padding = UDim.new(0, 3)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
 
