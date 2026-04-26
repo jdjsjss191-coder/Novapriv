@@ -263,7 +263,7 @@ local oldNamecall    = grm.__namecall
 
 if isPrisonWars then
 	-- Prison Wars: use workspace:Raycast hook, driven by the existing target system
-	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+	grm.__namecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local method, args = getnamecallmethod(), {...}
 		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
 			if SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
@@ -279,7 +279,7 @@ if isPrisonWars then
 	end))
 elseif isArsenal then
 	-- Arsenal: same Raycast hook approach
-	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+	grm.__namecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local method, args = getnamecallmethod(), {...}
 		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
 			if SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
