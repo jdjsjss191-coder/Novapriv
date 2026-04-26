@@ -259,27 +259,10 @@ setreadonly(grm, false)
 local currentPlaceId = game.PlaceId
 local isPrisonWars   = currentPlaceId == 155615604
 local isArsenal      = currentPlaceId == 286090429
-local oldNamecall    = grm.__namecall
 
-if isPrisonWars then
-	-- Prison Wars: use workspace:Raycast hook, driven by the existing target system
-	grm.__namecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-		local method, args = getnamecallmethod(), {...}
-		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
-			if SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
-				if not isHoldingKnife() then
-					local origin = args[2]
-					local aimPos = getPredictedPosition(currentTarget)
-					args[2], args[3] = origin, (aimPos - origin).Unit * 1000
-					return oldNamecall(table.unpack(args))
-				end
-			end
-		end
-		return oldNamecall(...)
-	end))
-elseif isArsenal then
-	-- Arsenal: same Raycast hook approach
-	grm.__namecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+if isPrisonWars or isArsenal then
+	local oldNamecall
+	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local method, args = getnamecallmethod(), {...}
 		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
 			if SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
