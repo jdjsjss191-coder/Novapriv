@@ -743,7 +743,7 @@ do
 			return lbl
 		end
 
-		local titleLbl = makeLabel(18, 0)
+		local titleLbl = makeLabel(24, 0)
 		local lblSA    = makeLabel(13, 1)
 		local lblCL    = makeLabel(13, 2)
 		local lblRF    = makeLabel(13, 3)
