@@ -529,6 +529,21 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
+	-- Silent Aim: Target mode acquisition (continuously find target while saWantsLock is true)
+	if SA['Enabled'] and SA['Target Mode'] ~= 'Automatic' and saWantsLock and not isLocking then
+		if not isHoldingKnife() then
+			local target = findClosestTarget()
+			if target then
+				currentTarget = target; lastVisibleTarget = target; isLocking = true
+				local rp = Players:GetPlayerFromCharacter(target.Parent)
+				if rp then saLockedPlayer = rp
+				else for _, proxy in pairs(BotProxies) do
+					if proxy.Character == target.Parent then saLockedPlayer = proxy; break end
+				end end
+			end
+		end
+	end
+
 	-- Silent Aim: Target mode tracking
 	if SA['Target Mode'] ~= 'Automatic' and isLocking and currentTarget then
 		local char = currentTarget.Parent
@@ -708,6 +723,7 @@ do
 	end
 
 	-- Automatic mode: always track closest in FOV
+	-- Target mode: continuously find target while tbActive is true
 	RunService.Heartbeat:Connect(function()
 		if isShutdown or not TB_C or not TB_C['Enabled'] then return end
 		if TB_C['Target Mode'] == 'Automatic' then
@@ -717,6 +733,11 @@ do
 			local t = tbFindTarget()
 			if t then tbTarget = t; tbActive = true
 			else tbTarget = nil; tbActive = false end
+		elseif tbActive then
+			if isHoldingKnife() then tbTarget = nil; return end
+			local t = tbFindTarget()
+			if t then tbTarget = t
+			else tbTarget = nil end
 		end
 	end)
 
@@ -988,26 +1009,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 			tbActive = false; tbTarget = nil
 		else
 			if not isHoldingKnife() then
-				local fov    = TB_C['FOV'] or {}
-				local mp     = UserInputService:GetMouseLocation()
-				local radius = (fov['Size'] or 20) * 5
-				local best, bd = nil, math.huge
-				for _, p in ipairs(getAllTargets()) do
-					local isBot = type(p) == 'table' and p._isBot
-					if not isBot and isBlacklisted(p) then continue end
-					if not p.Character then continue end
-					local hum = p.Character:FindFirstChildOfClass('Humanoid')
-					if not hum or hum.Health <= 0 then continue end
-					local hrp = p.Character:FindFirstChild('HumanoidRootPart')
-					if not hrp then continue end
-					local sp, on = Camera:WorldToViewportPoint(hrp.Position)
-					if on and sp.Z > 0 then
-						local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
-						if fov['Enabled'] and d > radius then continue end
-						if d < bd then bd = d; best = p end
-					end
-				end
-				if best then tbTarget = best; tbActive = true end
+				tbActive = true
+				-- target acquisition happens continuously in Heartbeat
 			end
 		end
 	end
@@ -1021,15 +1024,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		else
 			if not isHoldingKnife() then
 				saWantsLock = true
-				local target = findClosestTarget()
-				if target then
-					currentTarget = target; lastVisibleTarget = target; isLocking = true
-					local rp = Players:GetPlayerFromCharacter(target.Parent)
-					if rp then saLockedPlayer = rp
-					else for _, proxy in pairs(BotProxies) do
-						if proxy.Character == target.Parent then saLockedPlayer = proxy; break end
-					end end
-				end
+				-- target acquisition now happens continuously in RenderStepped
 			end
 		end
 	end
