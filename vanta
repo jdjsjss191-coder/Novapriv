@@ -416,7 +416,8 @@ local function refreshESP()
 		local NT = ESP_C['Nametag'] or {}
 		if not NT['Enabled'] then e.tag.Visible = false; continue end
 
-		local isTarget = currentTarget ~= nil and currentTarget.Parent == char
+		local isTarget = (currentTarget ~= nil and currentTarget.Parent == char)
+		             or (camLocked and camTarget ~= nil and camTarget.Parent == char)
 		local nameMode = NT['Mode'] or 'Username'
 		e.tag.Text       = isBot and player.Name
 		                or (nameMode == 'DisplayName' and player.DisplayName)
