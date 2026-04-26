@@ -1,3 +1,4 @@
+
 assert(shared.VyronNew, "[Vyron] Config not found -- run vyronconfig.lua first.")
 local CFG = shared.VyronNew
 
@@ -5,7 +6,7 @@ if shared.VyronCleanup then pcall(shared.VyronCleanup); shared.VyronCleanup = ni
 
 -- Force destroy any leftover GUIs from previous executions
 pcall(function()
-	for _, name in ipairs({"VyronHUD", "VyronESP", "VyronDmgIndicator"})
+	for _, name in ipairs({"VyronHUD", "VyronESP", "VyronDmgIndicator"}) do
 		local cg = game:GetService("CoreGui"):FindFirstChild(name)
 		if cg then cg:Destroy() end
 		local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
