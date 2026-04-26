@@ -147,8 +147,9 @@ local function makeBotProxy(name)
 		if k == 'Character' then
 			local m = t._model
 			if not m or not m.Parent then return nil end
-			local hum = m:FindFirstChildOfClass('Humanoid')
-			if hum and hum.Health <= 0 then return nil end
+			local ok, hum = pcall(function() return m:FindFirstChildOfClass('Humanoid') end)
+			if not ok or not hum then return nil end
+			if hum.Health <= 0 then return nil end
 			return m
 		end
 	end })
