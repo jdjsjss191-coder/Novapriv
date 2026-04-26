@@ -1,4 +1,3 @@
-
 assert(shared.VyronNew, "[Vyron] Config not found -- run vyronconfig.lua first.")
 local CFG = shared.VyronNew
 
@@ -813,11 +812,12 @@ do
 		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
 		pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
 		if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+		print("[Vyron] HUD created")
 
 		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
 		frame.AnchorPoint = Vector2.new(1, 0.5)
-		frame.Position = UDim2.new(1, -10, 0.5, 0)
+		frame.Position = UDim2.new(1, 0, 0.5, 0)
 		frame.Size = UDim2.new(0, 0, 0, 0)
 		frame.AutomaticSize = Enum.AutomaticSize.Y
 
@@ -843,6 +843,16 @@ do
 			return lbl
 		end
 
+		local titleLbl = makeLabel(24, 0)
+		local lblSA    = makeLabel(13, 1)
+		local lblCL    = makeLabel(13, 2)
+		local lblTB    = makeLabel(13, 3)
+		local lblRF    = makeLabel(13, 4)
+		local lblSM    = makeLabel(13, 5)
+		local lblIR    = makeLabel(13, 6)
+		local lblSPD   = makeLabel(13, 7)
+		local lblESP   = makeLabel(13, 8)
+
 		local function rgb(c)
 			return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
 		end
@@ -857,44 +867,55 @@ do
 		end
 
 		local function getTargetName()
-			local char
+			local char = nil
 			if camLocked and camTarget and camTarget.Parent then char = camTarget.Parent
-			elseif isLocking and currentTarget and currentTarget.Parent then char = currentTarget.Parent
-			elseif tbActive and tbTarget and tbTarget.Character then char = tbTarget.Character end
+			elseif isLocking and currentTarget and currentTarget.Parent then char = currentTarget.Parent end
 			if not char then return nil end
 			local p = Players:GetPlayerFromCharacter(char)
 			return p and p.Name or char.Name
 		end
 
-		local titleLbl = makeLabel(24, 0)
-		local lblSA    = makeLabel(13, 1)
-		local lblCL    = makeLabel(13, 2)
-		local lblTB    = makeLabel(13, 3)
-		local lblRF    = makeLabel(13, 4)
-		local lblSM    = makeLabel(13, 5)
-		local lblIR    = makeLabel(13, 6)
-		local lblSPD   = makeLabel(13, 7)
-		local lblESP   = makeLabel(13, 8)
-
 		RunService.Heartbeat:Connect(function()
 			if isShutdown then return end
+			frame.Position = UDim2.new(1, -10, 0.5, 0)
 			local tname = getTargetName()
 			local TC = HUD_C['Title Color'] or Color3.fromRGB(180, 180, 180)
+
 			titleLbl.Visible = true
 			titleLbl.Text = string.format('<font color="%s">Vyron</font>', rgb(TC))
 
-			local rfOn = CFG['Rapid Fire']['Enabled'] and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-			local function set(lbl, on, name, tgt)
-				lbl.Visible = on; if on then lbl.Text = fmt(name, tgt) end
-			end
-			set(lblSA,  SA['Enabled'] and isLocking,               "Silent Aim",  tname)
-			set(lblCL,  CL_C['Enabled'] and camLocked,             "Cam Lock",    tname)
-			set(lblTB,  TB_C and TB_C['Enabled'] and tbActive,     "Trigger Bot", tbTarget and tbTarget.Name or nil)
-			set(lblSPD, SPD_C['Enabled'] and speedEnabled,         "Speed",       nil)
-			set(lblRF,  rfOn,                                       "Rapid Fire",  nil)
-			set(lblSM,  CFG['Spread Modifier']['Enabled'],          "Spread Mod",  nil)
-			set(lblIR,  CFG['Infinite Range']['Enabled'],           "Inf Range",   nil)
-			set(lblESP, ESP_C['Enabled'],                           "ESP",         nil)
+			if SA['Enabled'] and isLocking then
+				lblSA.Visible = true; lblSA.Text = fmt("Silent Aim", tname)
+			else lblSA.Visible = false end
+
+			if CL_C['Enabled'] and camLocked then
+				lblCL.Visible = true; lblCL.Text = fmt("Cam Lock", tname)
+			else lblCL.Visible = false end
+
+			if TB_C and TB_C['Enabled'] and tbActive then
+				lblTB.Visible = true; lblTB.Text = fmt("Trigger Bot", tbTarget and tbTarget.Name or nil)
+			else lblTB.Visible = false end
+
+			if SPD_C['Enabled'] and speedEnabled then
+				lblSPD.Visible = true; lblSPD.Text = fmt("WalkSpeed", nil)
+			else lblSPD.Visible = false end
+
+			local rfActive = CFG['Rapid Fire']['Enabled'] and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+			if rfActive then
+				lblRF.Visible = true; lblRF.Text = fmt("Rapid Fire", nil)
+			else lblRF.Visible = false end
+
+			if CFG['Spread Modifier']['Enabled'] then
+				lblSM.Visible = true; lblSM.Text = fmt("Spread Mod", nil)
+			else lblSM.Visible = false end
+
+			if CFG['Infinite Range']['Enabled'] then
+				lblIR.Visible = true; lblIR.Text = fmt("Inf Range", nil)
+			else lblIR.Visible = false end
+
+			if ESP_C['Enabled'] then
+				lblESP.Visible = true; lblESP.Text = fmt("ESP", nil)
+			else lblESP.Visible = false end
 		end)
 	end
 end
