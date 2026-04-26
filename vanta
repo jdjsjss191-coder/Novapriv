@@ -27,6 +27,8 @@ local TB_C   = CFG['Trigger Bot']
 local ESP_C  = CFG['ESP']
 local SPD_C  = CFG['Speed']
 local BOT_C  = CFG['Bot Targeting']
+local DT_C   = CFG['Double Tap']
+local NJC_C  = CFG['No Jump Cooldown']
 
 local LocalPlayer = Players.LocalPlayer
 repeat task.wait() until LocalPlayer.Character
@@ -260,6 +262,19 @@ local currentPlaceId = game.PlaceId
 local isPrisonWars   = currentPlaceId == 155615604
 local isArsenal      = currentPlaceId == 286090429
 
+-- Client Redirection Helper
+local function isClientRedirectionWeapon()
+	if not SA['Client Redirection'] or not SA['Client Redirection']['Enabled'] then return false end
+	local char = LocalPlayer.Character
+	if not char then return false end
+	local tool = char:FindFirstChildOfClass('Tool')
+	if not tool then return false end
+	for _, name in ipairs(SA['Client Redirection']['Weapons'] or {}) do
+		if tool.Name == name or tool.Name:lower():find(name:lower(), 1, true) then return true end
+	end
+	return false
+end
+
 if isPrisonWars or isArsenal then
 	local oldNamecall
 	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
@@ -297,6 +312,26 @@ else
 			end
 		end
 		return oldIndex(self, key)
+	end
+	
+	-- Client Redirection for specific weapons
+	if SA['Client Redirection'] and SA['Client Redirection']['Enabled'] then
+		local oldNamecall
+		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+			local method = getnamecallmethod()
+			if method == "FireServer" and isClientRedirectionWeapon() then
+				local args = {...}
+				if SA['Enabled'] and currentTarget and currentTarget.Parent and not isHoldingKnife() then
+					local aimPos = getPredictedPosition(currentTarget)
+					-- Redirect the shot position argument (usually args[2])
+					if args[2] and typeof(args[2]) == "Vector3" then
+						args[2] = aimPos
+					end
+					return oldNamecall(table.unpack(args))
+				end
+			end
+			return oldNamecall(...)
+		end))
 	end
 end
 
@@ -645,6 +680,80 @@ do
 			if cd > 0 then task.wait(cd) else task.wait() end
 		end
 	end)
+end
+
+-- ============================================================================
+--  DOUBLE TAP
+-- ============================================================================
+do
+	local function isDoubleTapWeapon()
+		if not DT_C or not DT_C['Enabled'] then return false end
+		local char = LocalPlayer.Character
+		if not char then return false end
+		local tool = char:FindFirstChildOfClass('Tool')
+		if not tool then return false end
+		for _, name in ipairs(DT_C['Weapons'] or {}) do
+			if tool.Name == name or tool.Name:lower():find(name:lower(), 1, true) then return true end
+		end
+		return false
+	end
+
+	local lastDoubleTap = 0
+	UserInputService.InputBegan:Connect(function(i, gp)
+		if gp or not DT_C or not DT_C['Enabled'] then return end
+		if i.UserInputType == Enum.UserInputType.MouseButton1 and isDoubleTapWeapon() and not isHoldingKnife() then
+			local now = tick()
+			if now - lastDoubleTap >= 0.05 then
+				local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass('Tool')
+				if tool then
+					task.spawn(function()
+						tool:Activate()
+						task.wait(0.01)
+						tool:Activate()
+					end)
+					lastDoubleTap = now
+				end
+			end
+		end
+	end)
+end
+
+-- ============================================================================
+--  NO JUMP COOLDOWN
+-- ============================================================================
+do
+	if NJC_C and NJC_C['Enabled'] then
+		local mt = getrawmetatable(game)
+		local oldNamecall = mt.__namecall
+		setreadonly(mt, false)
+		mt.__namecall = newcclosure(function(self, ...)
+			local method = getnamecallmethod()
+			if not checkcaller() and method == "FireServer" then
+				local args = {...}
+				if tostring(self) == "Action" and args[1] == "Jump" then
+					-- Remove jump cooldown by allowing immediate jumps
+					return oldNamecall(self, ...)
+				end
+			end
+			return oldNamecall(self, ...)
+		end)
+		setreadonly(mt, true)
+		
+		-- Also modify humanoid jump cooldown locally
+		RunService.Heartbeat:Connect(function()
+			if not NJC_C['Enabled'] then return end
+			local char = LocalPlayer.Character
+			if char then
+				local hum = char:FindFirstChildOfClass('Humanoid')
+				if hum then
+					-- Reset jump cooldown by setting UseJumpPower
+					pcall(function()
+						hum.UseJumpPower = true
+					end)
+				end
+			end
+		end)
+	end
 end
 
 -- ============================================================================
