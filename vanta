@@ -1,4 +1,3 @@
-
 assert(shared.VyronNew, "[Vyron] Config not found -- run vyronconfig.lua first.")
 local CFG = shared.VyronNew
 
