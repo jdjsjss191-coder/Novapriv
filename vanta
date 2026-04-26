@@ -944,7 +944,7 @@ do
 			lbl.BackgroundTransparency = 1
 			lbl.Size = UDim2.new(0, 0, 0, size + 4)
 			lbl.AutomaticSize = Enum.AutomaticSize.X
-			lbl.Font = Enum.Font.GothamBold
+			lbl.Font = Enum.Font.SourceSansBold
 			lbl.TextSize = size
 			lbl.TextStrokeTransparency = 0.4
 			lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
