@@ -803,7 +803,7 @@ local hudGui = nil
 do
 	local HUD_C    = CFG['General']['HUD']
 	local HUD_MODE = HUD_C['Mode'] or 'ArrayList'   -- 'HUD' or 'ArrayList'
-	if not HUD_C['Enabled'] then goto skipHud end
+	if HUD_C['Enabled'] then
 
 	for _, gui in ipairs({game:GetService("CoreGui"), LocalPlayer:WaitForChild("PlayerGui")}) do
 		local old = gui:FindFirstChild("VyronHUD")
@@ -1042,9 +1042,8 @@ do
 				if t then fadeOut(t) end
 			end
 		end)
-	end
-
-	::skipHud::
+	end -- ArrayList mode
+	end -- HUD_C['Enabled']
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
