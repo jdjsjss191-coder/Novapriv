@@ -702,6 +702,7 @@ do
 		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
 		pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
 		if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+		print("[Vyron] HUD created")
 
 		local frame = Instance.new("Frame", hudGui)
 		frame.BackgroundTransparency = 1
