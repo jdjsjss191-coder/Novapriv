@@ -6,7 +6,7 @@ if shared.VyronCleanup then pcall(shared.VyronCleanup); shared.VyronCleanup = ni
 
 -- Force destroy any leftover GUIs from previous executions
 pcall(function()
-	for _, name in ipairs({"VyronHUD", "VyronESP", "VyronDmgIndicator"}) do
+	for _, name in ipairs({"VyronHUD", "VyronESP", "VyronDmgIndicator"})
 		local cg = game:GetService("CoreGui"):FindFirstChild(name)
 		if cg then cg:Destroy() end
 		local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
