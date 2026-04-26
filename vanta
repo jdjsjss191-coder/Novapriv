@@ -23,6 +23,7 @@ local Binds  = CFG['General']['Binds']
 local Checks = CFG['General']['Checks']
 local SA     = CFG['Silent Aim']
 local CL_C   = CFG['Camera Lock']
+local TB_C   = CFG['Trigger Bot']
 local ESP_C  = CFG['ESP']
 local SPD_C  = CFG['Speed']
 local BOT_C  = CFG['Bot Targeting']
@@ -41,6 +42,9 @@ local camLocked         = false
 local camTarget         = nil
 local speedEnabled      = false
 local isShutdown        = false
+local tbActive          = false
+local tbTarget          = nil
+local tbLastShot        = 0
 
 local function isPlayerKnockedOrKO(player)
 	if not Checks['Knocked'] then return false end
@@ -645,6 +649,100 @@ do
 	end)
 end
 
+-- ============================================================================
+--  TRIGGER BOT
+-- ============================================================================
+do
+	local TBCircle = Drawing.new("Circle")
+	TBCircle.Filled = false; TBCircle.Thickness = 1
+	TBCircle.NumSides = 64; TBCircle.Transparency = 1; TBCircle.Visible = false
+
+	-- FOV circle visual
+	RunService.RenderStepped:Connect(function()
+		if not TB_C or not TB_C['Enabled'] then TBCircle.Visible = false; return end
+		local fov = TB_C['FOV'] or {}
+		if fov['Enabled'] and fov['Visible'] then
+			local mp = UserInputService:GetMouseLocation()
+			TBCircle.Position = Vector2.new(mp.X, mp.Y)
+			TBCircle.Radius   = (fov['Size'] or 20) * 5
+			TBCircle.Color    = fov['Color'] or Color3.new(1, 1, 1)
+			TBCircle.Visible  = true
+		else
+			TBCircle.Visible = false
+		end
+	end)
+
+	local function tbFindTarget()
+		if not TB_C or not TB_C['Enabled'] then return nil end
+		local fov    = TB_C['FOV'] or {}
+		local mp     = UserInputService:GetMouseLocation()
+		local radius = (fov['Size'] or 20) * 5
+		local best, bd = nil, math.huge
+		for _, p in ipairs(getAllTargets()) do
+			local isBot = type(p) == 'table' and p._isBot
+			if not isBot and isBlacklisted(p) then continue end
+			if not p.Character then continue end
+			local hum = p.Character:FindFirstChildOfClass('Humanoid')
+			if not hum or hum.Health <= 0 then continue end
+			if not isBot and isPlayerKnockedOrKO(p) then continue end
+			if isBot and isBotDead(p) then continue end
+			local hrp = p.Character:FindFirstChild('HumanoidRootPart')
+			if not hrp then continue end
+			local sp, on = Camera:WorldToViewportPoint(hrp.Position)
+			if not on or sp.Z <= 0 then continue end
+			local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+			if fov['Enabled'] and d > radius then continue end
+			if d < bd then bd = d; best = p end
+		end
+		return best
+	end
+
+	local function tbMouseOnTarget()
+		if not tbTarget then return false end
+		local char = tbTarget.Character; if not char then return false end
+		local hit = Mouse.Target; if not hit then return false end
+		return hit == char or hit:IsDescendantOf(char)
+	end
+
+	-- Automatic mode: always track closest in FOV
+	RunService.Heartbeat:Connect(function()
+		if isShutdown or not TB_C or not TB_C['Enabled'] then return end
+		if TB_C['Target Mode'] == 'Automatic' then
+			if isHoldingKnife() then
+				tbTarget = nil; tbActive = false; return
+			end
+			local t = tbFindTarget()
+			if t then tbTarget = t; tbActive = true
+			else tbTarget = nil; tbActive = false end
+		end
+	end)
+
+	-- Fire loop
+	RunService.Heartbeat:Connect(function()
+		if isShutdown or not TB_C or not TB_C['Enabled'] then return end
+		if not tbActive or not tbTarget then return end
+		if isHoldingKnife() then return end
+		if not LocalPlayer.Character then return end
+		if not tbMouseOnTarget() then return end
+		local tool = LocalPlayer.Character:FindFirstChildWhichIsA('Tool')
+		if not tool then return end
+		local function clean(s) return s:lower():gsub('[%[%]%- ]', '') end
+		local tn = clean(tool.Name)
+		local ok = false
+		for _, w in ipairs(TB_C['Weapons'] or {}) do
+			if tn:find(clean(w), 1, true) then ok = true; break end
+		end
+		if not ok then return end
+		local cd = TB_C['Cooldown'] or 0.1
+		if tick() - tbLastShot >= cd then
+			task.spawn(function() task.wait(cd); tool:Activate() end)
+			tbLastShot = tick()
+		end
+	end)
+
+	shared._VyronTBCircle = TBCircle
+end
+
 do
 	local IR_C  = CFG['Infinite Range']
 	local PROPS = {'Range','MaxRange','FireRange','Distance','MaxDistance','BulletRange'}
@@ -746,11 +844,12 @@ do
 		local titleLbl = makeLabel(24, 0)
 		local lblSA    = makeLabel(13, 1)
 		local lblCL    = makeLabel(13, 2)
-		local lblRF    = makeLabel(13, 3)
-		local lblSM    = makeLabel(13, 4)
-		local lblIR    = makeLabel(13, 5)
-		local lblSPD   = makeLabel(13, 6)
-		local lblESP   = makeLabel(13, 7)
+		local lblTB    = makeLabel(13, 3)
+		local lblRF    = makeLabel(13, 4)
+		local lblSM    = makeLabel(13, 5)
+		local lblIR    = makeLabel(13, 6)
+		local lblSPD   = makeLabel(13, 7)
+		local lblESP   = makeLabel(13, 8)
 
 		local function rgb(c)
 			return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
@@ -791,6 +890,10 @@ do
 				lblCL.Visible = true; lblCL.Text = fmt("Cam Lock", tname)
 			else lblCL.Visible = false end
 
+			if TB_C and TB_C['Enabled'] and tbActive then
+				lblTB.Visible = true; lblTB.Text = fmt("Trigger Bot", tbTarget and tbTarget.Name or nil)
+			else lblTB.Visible = false end
+
 			if SPD_C['Enabled'] and speedEnabled then
 				lblSPD.Visible = true; lblSPD.Text = fmt("WalkSpeed", nil)
 			else lblSPD.Visible = false end
@@ -828,6 +931,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		currentTarget = nil; isLocking = false; saWantsLock = false
 		lastVisibleTarget = nil; saLockedPlayer = nil
 		camLocked = false; camTarget = nil; speedEnabled = false
+		tbActive = false; tbTarget = nil
 		pcall(function() local hum = getHumanoid(); if hum then hum.WalkSpeed = 16 end end)
 		for _, e in pairs(espLabels) do pcall(function() e.tag:Destroy() end) end
 		espLabels = {}
@@ -836,6 +940,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		pcall(function() SAFovCircle:Remove() end)
 		pcall(function() CLFovCircle:Remove() end)
 		pcall(function() tracerLine:Remove() end)
+		pcall(function() if shared._VyronTBCircle then shared._VyronTBCircle:Remove() end end)
 		shared.VyronCleanup = nil
 		print("[Vyron] Shutdown complete.")
 		return
@@ -871,6 +976,38 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		return
 	end
 
+	-- Trigger Bot toggle (Target mode only)
+	if TB_C and TB_C['Enabled'] and TB_C['Target Mode'] ~= 'Automatic'
+		and Binds['Trigger Bot'] and input.KeyCode == Enum.KeyCode[Binds['Trigger Bot']:upper()] then
+		if tbActive then
+			tbActive = false; tbTarget = nil
+		else
+			if not isHoldingKnife() then
+				local fov    = TB_C['FOV'] or {}
+				local mp     = UserInputService:GetMouseLocation()
+				local radius = (fov['Size'] or 20) * 5
+				local best, bd = nil, math.huge
+				for _, p in ipairs(getAllTargets()) do
+					local isBot = type(p) == 'table' and p._isBot
+					if not isBot and isBlacklisted(p) then continue end
+					if not p.Character then continue end
+					local hum = p.Character:FindFirstChildOfClass('Humanoid')
+					if not hum or hum.Health <= 0 then continue end
+					local hrp = p.Character:FindFirstChild('HumanoidRootPart')
+					if not hrp then continue end
+					local sp, on = Camera:WorldToViewportPoint(hrp.Position)
+					if on and sp.Z > 0 then
+						local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+						if fov['Enabled'] and d > radius then continue end
+						if d < bd then bd = d; best = p end
+					end
+				end
+				if best then tbTarget = best; tbActive = true end
+			end
+		end
+		return
+	end
+
 	if input.KeyCode ~= Enum.KeyCode[Binds['Silent Aim']:upper()] then return end
 	if not SA['Enabled'] or SA['Target Mode'] == 'Automatic' then return end
 	if saWantsLock then
@@ -895,6 +1032,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	currentTarget = nil; isLocking = false; saWantsLock = false
 	lastVisibleTarget = nil; saLockedPlayer = nil
 	camLocked = false; camTarget = nil; speedEnabled = false
+	tbActive = false; tbTarget = nil
 end)
 
 shared.VyronCleanup = function()
@@ -911,6 +1049,8 @@ shared.VyronCleanup = function()
 	pcall(function() SAFovCircle:Remove() end)
 	pcall(function() CLFovCircle:Remove() end)
 	pcall(function() tracerLine:Remove() end)
+	pcall(function() if shared._VyronTBCircle then shared._VyronTBCircle:Remove() end end)
+	tbActive = false; tbTarget = nil
 end
 
 print("[Vyron] Ready.")
