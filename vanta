@@ -776,6 +776,7 @@ do
 
 		RunService.Heartbeat:Connect(function()
 			if isShutdown then return end
+			frame.Position = UDim2.fromScale(0.78, 0.5)
 			local tname = getTargetName()
 			local TC = HUD_C['Title Color'] or Color3.fromRGB(180, 180, 180)
 
