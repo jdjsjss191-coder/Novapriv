@@ -779,32 +779,44 @@ do
 	local isArsenal = currentPlaceId == 286090429
 	
 	if isArsenal and ARS_C and ARS_C['Enabled'] then
-		-- Fire Rate Modifier
-		if ARS_C['Fire Rate'] and ARS_C['Fire Rate']['Enabled'] then
-			local fireRateValue = ARS_C['Fire Rate']['Value'] or 0.02
-			
-			-- Apply fire rate changes
-			local function applyFireRate()
-				pcall(function()
-					for _, v in pairs(game.ReplicatedStorage.Weapons:GetDescendants()) do
+		-- Apply all Arsenal modifications
+		local function applyArsenalMods()
+			pcall(function()
+				for _, v in pairs(game.ReplicatedStorage.Weapons:GetDescendants()) do
+					-- Fire Rate Modifier
+					if ARS_C['Fire Rate'] and ARS_C['Fire Rate']['Enabled'] then
 						if v.Name == "FireRate" or v.Name == "BFireRate" then
-							v.Value = fireRateValue
+							v.Value = ARS_C['Fire Rate']['Value'] or 0.02
 						end
 					end
-				end)
-			end
-			
-			-- Apply immediately
-			applyFireRate()
-			
-			-- Keep applying every few seconds to maintain changes
-			task.spawn(function()
-				while ARS_C and ARS_C['Enabled'] and ARS_C['Fire Rate'] and ARS_C['Fire Rate']['Enabled'] do
-					task.wait(2)
-					applyFireRate()
+					
+					-- Recoil Control
+					if ARS_C['Recoil Control'] and ARS_C['Recoil Control']['Enabled'] then
+						if v.Name == "RecoilControl" then
+							v.Value = ARS_C['Recoil Control']['Value'] or 0
+						end
+					end
+					
+					-- Spread Control
+					if ARS_C['Spread Control'] and ARS_C['Spread Control']['Enabled'] then
+						if v.Name == "MaxSpread" then
+							v.Value = ARS_C['Spread Control']['Value'] or 0
+						end
+					end
 				end
 			end)
 		end
+		
+		-- Apply immediately
+		applyArsenalMods()
+		
+		-- Keep applying every few seconds to maintain changes
+		task.spawn(function()
+			while ARS_C and ARS_C['Enabled'] do
+				task.wait(2)
+				applyArsenalMods()
+			end
+		end)
 	end
 end
 
