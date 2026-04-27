@@ -1370,7 +1370,7 @@ do
 end
 
 -- ============================================================================
---  CLEAN CENTER HUD (BITCOIN STYLE)
+--  CLEAN HUD (OLD POSITION, NEW STYLE)
 -- ============================================================================
 
 local hudGui = Instance.new("ScreenGui")
@@ -1379,27 +1379,37 @@ hudGui.ResetOnSpawn = false
 hudGui.IgnoreGuiInset = true
 hudGui.Parent = game:GetService("CoreGui")
 
-local mainLabel = Instance.new("TextLabel", hudGui)
-mainLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-mainLabel.Position = UDim2.new(0.5, 0, 0.35, 0)
-mainLabel.Size = UDim2.new(0, 300, 0, 50)
+-- container (same right-side position as old HUD)
+local frame = Instance.new("Frame", hudGui)
+frame.BackgroundTransparency = 1
+frame.AnchorPoint = Vector2.new(1, 0.5)
+frame.Position = UDim2.new(1, -10, 0.5, 0) -- SAME as old
+frame.Size = UDim2.new(0, 200, 0, 60)
+
+-- TITLE (same size feel as old title)
+local mainLabel = Instance.new("TextLabel", frame)
+mainLabel.Size = UDim2.new(1, 0, 0, 28)
+mainLabel.Position = UDim2.new(0, 0, 0, 0)
 mainLabel.BackgroundTransparency = 1
 mainLabel.Font = Enum.Font.SourceSansBold
-mainLabel.TextScaled = true
+mainLabel.TextSize = 24 -- same as old title
+mainLabel.TextXAlignment = Enum.TextXAlignment.Right
 mainLabel.Text = "vyron"
 mainLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
 mainLabel.TextStrokeTransparency = 0.3
 
-local subLabel = Instance.new("TextLabel", hudGui)
-subLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-subLabel.Position = UDim2.new(0.5, 0, 0.42, 0)
-subLabel.Size = UDim2.new(0, 400, 0, 30)
+-- FEATURES TEXT (same size as old feature labels)
+local subLabel = Instance.new("TextLabel", frame)
+subLabel.Size = UDim2.new(1, 0, 0, 18)
+subLabel.Position = UDim2.new(0, 0, 0, 28)
 subLabel.BackgroundTransparency = 1
-subLabel.Font = Enum.Font.SourceSans
-subLabel.TextScaled = true
+subLabel.Font = Enum.Font.SourceSansBold
+subLabel.TextSize = 13 -- SAME as old labels
+subLabel.TextXAlignment = Enum.TextXAlignment.Right
 subLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 subLabel.TextStrokeTransparency = 0.5
 
+-- dynamic update
 RunService.RenderStepped:Connect(function()
 	if isShutdown then return end
 
