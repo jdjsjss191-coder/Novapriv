@@ -155,6 +155,28 @@ end
 local function getPredictedPosition(part)
 	local pred = SA['Prediction']
 	if not pred then return part.Position end
+	
+	-- Auto-prediction for Da Hood
+	if isDaHood and SA['Auto Prediction'] and SA['Auto Prediction']['Enabled'] then
+		local ping = LocalPlayer:GetNetworkPing() * 1000
+		local autoPred
+		if ping < 50 then
+			autoPred = 0.12
+		elseif ping < 100 then
+			autoPred = 0.133
+		elseif ping < 150 then
+			autoPred = 0.15
+		else
+			autoPred = 0.17
+		end
+		
+		local px, py, pz = autoPred, autoPred, autoPred
+		local vel = part.AssemblyLinearVelocity
+		local scale = math.clamp((part.Position - Camera.CFrame.Position).Magnitude / 100, 0.05, 1)
+		return part.Position + Vector3.new(vel.X*px*scale, vel.Y*py*scale, vel.Z*pz*scale)
+	end
+	
+	-- Standard prediction
 	local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
 	if px == 0 and py == 0 and pz == 0 then return part.Position end
 	local vel   = part.AssemblyLinearVelocity
@@ -290,6 +312,7 @@ setreadonly(grm, false)
 local currentPlaceId = game.PlaceId
 local isPrisonWars   = currentPlaceId == 155615604
 local isArsenal      = currentPlaceId == 286090429
+local isDaHood       = currentPlaceId == 2788229376
 
 -- Client Redirection Helper
 local function isClientRedirectionWeapon()
@@ -320,6 +343,74 @@ if isPrisonWars or isArsenal then
 		end
 		return oldNamecall(...)
 	end))
+elseif isDaHood then
+	-- Da Hood specific silent aim methods (Enhanced)
+	local oldNamecall
+	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+		local method, args = getnamecallmethod(), {...}
+		
+		if not checkcaller() and method == "FireServer" and SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
+			if not isHoldingKnife() then
+				-- Da Hood UpdateMousePosI hook (Primary method)
+				if tostring(args[1]) == "UpdateMousePosI" or tostring(args[1]):find("UpdateMousePos") then
+					local predictedPos = getPredictedPosition(currentTarget)
+					args[2] = predictedPos
+					return oldNamecall(table.unpack(args))
+				end
+				
+				-- Da Hood MAIN remote hook (Secondary method)
+				if tostring(args[1]) == "MAIN" then
+					local predictedPos = getPredictedPosition(currentTarget)
+					args[2] = predictedPos
+					return oldNamecall(table.unpack(args))
+				end
+				
+				-- General remote hook for position arguments (Fallback method)
+				for i = 2, #args do
+					if typeof(args[i]) == "Vector3" then
+						local predictedPos = getPredictedPosition(currentTarget)
+						args[i] = predictedPos
+						break
+					end
+				end
+			end
+		end
+		
+		-- Da Hood Raycast hook (Universal method)
+		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
+			if SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
+				if not isHoldingKnife() then
+					local origin = args[2]
+					local aimPos = getPredictedPosition(currentTarget)
+					args[2], args[3] = origin, (aimPos - origin).Unit * 1000
+					return oldNamecall(table.unpack(args))
+				end
+			end
+		end
+		
+		return oldNamecall(...)
+	end))
+	
+	-- Da Hood Tool Handle Position Hook (Additional method)
+	task.spawn(function()
+		while isDaHood and SA and SA['Enabled'] do
+			task.wait()
+			if currentTarget and currentTarget.Parent and not isHoldingKnife() then
+				local char = LocalPlayer.Character
+				if char then
+					local tool = char:FindFirstChildOfClass('Tool')
+					if tool and tool:FindFirstChild('Handle') then
+						local handle = tool.Handle
+						local predictedPos = getPredictedPosition(currentTarget)
+						-- Redirect tool handle position for Da Hood
+						pcall(function()
+							handle.CFrame = CFrame.new(predictedPos)
+						end)
+					end
+				end
+			end
+		end
+	end)
 else
 	grm.__index = function(self, key)
 		if not checkcaller() and self == Mouse and SA and SA['Enabled'] then
