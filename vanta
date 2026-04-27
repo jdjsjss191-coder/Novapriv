@@ -705,65 +705,7 @@ end)
 
 RunService.RenderStepped:Connect(function()
 	if isShutdown then return end
-	
-	-- Skip main targeting system when in Da Hood (Da Hood has its own targeting)
-	if isDaHood then
-		-- Only handle Camera Lock, ESP, FOV, and Tracer updates for Da Hood
-		-- Camera Lock: Automatic targeting
-		if CL_C['Enabled'] and CL_C['Target Mode'] == 'Automatic' then
-			if isHoldingKnife() or shouldSkipTarget() then
-				camLocked = false; camTarget = nil
-			else
-				local best = clFindClosest()
-				if best then camLocked = true; camTarget = best
-				else camLocked = false; camTarget = nil end
-			end
-		end
 
-		-- Camera Lock: FOV circle
-		if CL_C['Enabled'] then
-			local fovCfg = CL_C['FOV'] or {}
-			if fovCfg['Enabled'] and fovCfg['Visible'] then
-				local mp = UserInputService:GetMouseLocation()
-				CLFovCircle.Position = Vector2.new(mp.X, mp.Y)
-				CLFovCircle.Radius   = fovCfg['Size'] or 120
-				CLFovCircle.Color    = fovCfg['Color'] or Color3.fromRGB(255,255,255)
-				CLFovCircle.Visible  = true
-			else
-				CLFovCircle.Visible = false
-			end
-		else
-			CLFovCircle.Visible = false
-		end
-
-		-- Camera Lock: aim
-		if CL_C['Enabled'] and camLocked and camTarget and not isHoldingKnife() then
-			local char = camTarget.Parent
-			if not char or clIsKnocked(char) then
-				camLocked = false; camTarget = nil
-			else
-				local hitPart = CL_C['Hit Part'] or 'HumanoidRootPart'
-				local aimPart = (hitPart == 'Closest Part') and getClosestBodyPart(char)
-				              or char:FindFirstChild(hitPart) or camTarget
-				local pred    = CL_C['Prediction'] or {}
-				local vel     = Vector3.new(0,0,0)
-				pcall(function() vel = camTarget.AssemblyLinearVelocity end)
-				local scale   = math.clamp((aimPart.Position - Camera.CFrame.Position).Magnitude / 100, 0.05, 1)
-				local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
-				local aimPos  = aimPart.Position + Vector3.new(vel.X*px*scale, vel.Y*py*scale, vel.Z*pz*scale)
-				local targetCF = CFrame.new(Camera.CFrame.Position, aimPos)
-				local smooth   = math.clamp(tonumber(CL_C['Smoothness']) or 0, 0, 0.99)
-				Camera.CFrame  = smooth <= 0 and targetCF or Camera.CFrame:Lerp(targetCF, 1 - smooth)
-			end
-		end
-
-		updateFOV()
-		updateTracer()
-		refreshESP()
-		return
-	end
-
-	-- Standard targeting system for non-Da Hood games
 	-- Silent Aim: Automatic mode
 	if SA['Enabled'] and SA['Target Mode'] == 'Automatic' then
 		if isHoldingKnife() or shouldSkipTarget() then
@@ -902,7 +844,6 @@ RunService.RenderStepped:Connect(function()
 	updateFOV()
 	updateTracer()
 	refreshESP()
-end)
 end)
 
 do
