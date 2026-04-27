@@ -153,30 +153,32 @@ local function getClosestBodyPart(character)
 end
 
 local function getPredictedPosition(part)
-	local pred = SA['Prediction']
-	if not pred then return part.Position end
-	
-	-- Auto-prediction for Da Hood
-	if isDaHood and SA['Auto Prediction'] and SA['Auto Prediction']['Enabled'] then
-		local ping = LocalPlayer:GetNetworkPing() * 1000
-		local autoPred
-		if ping < 50 then
-			autoPred = 0.12
-		elseif ping < 100 then
-			autoPred = 0.133
-		elseif ping < 150 then
-			autoPred = 0.15
-		else
-			autoPred = 0.17
+	-- Use Da Hood prediction method when in Da Hood
+	if isDaHood then
+		if not part then return Vector3.new() end
+		local velocity = part.AssemblyLinearVelocity
+		local prediction = 0.133 -- Default Da Hood prediction
+		
+		-- Auto-prediction for Da Hood (same as standalone script)
+		if SA['Auto Prediction'] and SA['Auto Prediction']['Enabled'] then
+			local ping = LocalPlayer:GetNetworkPing() * 1000
+			if ping < 50 then
+				prediction = 0.12
+			elseif ping < 100 then
+				prediction = 0.133
+			elseif ping < 150 then
+				prediction = 0.15
+			else
+				prediction = 0.17
+			end
 		end
 		
-		local px, py, pz = autoPred, autoPred, autoPred
-		local vel = part.AssemblyLinearVelocity
-		local scale = math.clamp((part.Position - Camera.CFrame.Position).Magnitude / 100, 0.05, 1)
-		return part.Position + Vector3.new(vel.X*px*scale, vel.Y*py*scale, vel.Z*pz*scale)
+		return part.Position + (velocity * prediction)
 	end
 	
-	-- Standard prediction
+	-- Standard prediction for other games
+	local pred = SA['Prediction']
+	if not pred then return part.Position end
 	local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
 	if px == 0 and py == 0 and pz == 0 then return part.Position end
 	local vel   = part.AssemblyLinearVelocity
@@ -344,30 +346,40 @@ if isPrisonWars or isArsenal then
 		return oldNamecall(...)
 	end))
 elseif isDaHood then
-	-- Da Hood specific silent aim methods (Enhanced)
+	-- Da Hood Silent Aim - Using exact methods from standalone script
+	-- Method 1: Mouse.Hit/__index Hook (Most Reliable)
+	grm.__index = function(self, key)
+		if not checkcaller() and self == Mouse and SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
+			if not isHoldingKnife() then
+				if key == "Hit" then
+					local predictedPos = getPredictedPosition(currentTarget)
+					return CFrame.new(predictedPos)
+				elseif key == "Target" then
+					return currentTarget
+				end
+			end
+		end
+		return oldIndex(self, key)
+	end
+	
+	-- Method 2: __namecall Hook for RemoteEvents
 	local oldNamecall
-	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-		local method, args = getnamecallmethod(), {...}
+	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+		local method = getnamecallmethod()
+		local args = {...}
 		
 		if not checkcaller() and method == "FireServer" and SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
 			if not isHoldingKnife() then
-				-- Da Hood UpdateMousePosI hook (Primary method)
-				if tostring(args[1]) == "UpdateMousePosI" or tostring(args[1]):find("UpdateMousePos") then
+				-- Da Hood UpdateMousePosI hook
+				if tostring(self) == "UpdateMousePosI" or tostring(self):find("UpdateMousePos") then
 					local predictedPos = getPredictedPosition(currentTarget)
-					args[2] = predictedPos
-					return oldNamecall(table.unpack(args))
+					args[1] = predictedPos
+					return oldNamecall(self, table.unpack(args))
 				end
 				
-				-- Da Hood MAIN remote hook (Secondary method)
-				if tostring(args[1]) == "MAIN" then
-					local predictedPos = getPredictedPosition(currentTarget)
-					args[2] = predictedPos
-					return oldNamecall(table.unpack(args))
-				end
-				
-				-- General remote hook for position arguments (Fallback method)
-				for i = 2, #args do
-					if typeof(args[i]) == "Vector3" then
+				-- General remote hook for position arguments
+				for i, arg in pairs(args) do
+					if typeof(arg) == "Vector3" then
 						local predictedPos = getPredictedPosition(currentTarget)
 						args[i] = predictedPos
 						break
@@ -376,41 +388,18 @@ elseif isDaHood then
 			end
 		end
 		
-		-- Da Hood Raycast hook (Universal method)
-		if args[1] == Workspace and not checkcaller() and method == "Raycast" then
-			if SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
-				if not isHoldingKnife() then
-					local origin = args[2]
-					local aimPos = getPredictedPosition(currentTarget)
-					args[2], args[3] = origin, (aimPos - origin).Unit * 1000
-					return oldNamecall(table.unpack(args))
-				end
+		-- Method 3: Raycast Hook
+		if method == "Raycast" and self == Workspace and SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
+			if not isHoldingKnife() then
+				local origin = args[1]
+				local predictedPos = getPredictedPosition(currentTarget)
+				local direction = (predictedPos - origin).Unit * 1000
+				args[2] = direction
 			end
 		end
 		
-		return oldNamecall(...)
+		return oldNamecall(self, table.unpack(args))
 	end))
-	
-	-- Da Hood Tool Handle Position Hook (Additional method)
-	task.spawn(function()
-		while isDaHood and SA and SA['Enabled'] do
-			task.wait()
-			if currentTarget and currentTarget.Parent and not isHoldingKnife() then
-				local char = LocalPlayer.Character
-				if char then
-					local tool = char:FindFirstChildOfClass('Tool')
-					if tool and tool:FindFirstChild('Handle') then
-						local handle = tool.Handle
-						local predictedPos = getPredictedPosition(currentTarget)
-						-- Redirect tool handle position for Da Hood
-						pcall(function()
-							handle.CFrame = CFrame.new(predictedPos)
-						end)
-					end
-				end
-			end
-		end
-	end)
 else
 	grm.__index = function(self, key)
 		if not checkcaller() and self == Mouse and SA and SA['Enabled'] then
