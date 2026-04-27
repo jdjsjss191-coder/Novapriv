@@ -1394,7 +1394,7 @@ mainLabel.BackgroundTransparency = 1
 mainLabel.Font = Enum.Font.SourceSansBold
 mainLabel.TextSize = 24 -- same as old title
 mainLabel.TextXAlignment = Enum.TextXAlignment.Right
-mainLabel.Text = "vyron"
+mainLabel.Text = "Vanity"
 mainLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
 mainLabel.TextStrokeTransparency = 0.3
 
