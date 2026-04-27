@@ -152,7 +152,147 @@ local function getClosestBodyPart(character)
 	return best
 end
 
+-- Closest Point Calculation (from Cider script)
+local function getClosestPoint(part, useCameraDirection)
+	if not part or not part:IsA("BasePart") then return part.Position end
+	
+	local cf = part.CFrame
+	local size = part.Size
+	local rayOrigin, rayDirection
+	
+	if useCameraDirection then
+		rayOrigin = Camera.CFrame.Position
+		rayDirection = Camera.CFrame.LookVector
+	else
+		local mousePos = UserInputService:GetMouseLocation()
+		local mouseRay = Camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+		rayOrigin = mouseRay.Origin
+		rayDirection = mouseRay.Direction
+	end
+	
+	-- For small parts, just return center position
+	if size.Magnitude < 2 then
+		return part.Position
+	end
+	
+	local bestPos = part.Position
+	local closestDist = math.huge
+	local halfSize = size * 0.5
+	
+	-- Sample points on the surface of the part
+	for x = -1, 1, 0.2 do
+		for y = -1, 1, 0.2 do
+			for z = -1, 1, 0.2 do
+				-- Only check surface points
+				if math.abs(x) > 0.99 or math.abs(y) > 0.99 or math.abs(z) > 0.99 then
+					local localPos = Vector3.new(
+						x * halfSize.X,
+						y * halfSize.Y,
+						z * halfSize.Z
+					)
+					local worldPos = cf:PointToWorldSpace(localPos)
+					
+					-- Calculate distance from ray to this point
+					local pointToRay = worldPos - rayOrigin
+					local projectionLength = pointToRay:Dot(rayDirection)
+					local closestPointOnRay = rayOrigin + rayDirection * projectionLength
+					local distanceToRay = (worldPos - closestPointOnRay).Magnitude
+					
+					if distanceToRay < closestDist then
+						closestDist = distanceToRay
+						bestPos = worldPos
+					end
+				end
+			end
+		end
+	end
+	
+	return bestPos
+end
+
+-- Anti-Curve System (from Cider script)
+local function getGunBarrel()
+	local char = LocalPlayer.Character
+	if not char then return nil end
+	
+	for _, tool in pairs(char:GetChildren()) do
+		if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
+			return tool.Handle
+		end
+	end
+	return nil
+end
+
+local function calculate3DAngle(origin, direction, targetPos)
+	local toTarget = (targetPos - origin).Unit
+	local dotProduct = direction:Dot(toTarget)
+	dotProduct = math.clamp(dotProduct, -1, 1)
+	local angleRadians = math.acos(dotProduct)
+	return math.deg(angleRadians)
+end
+
+local function shouldBlockAntiCurve(targetPart, targetPosition)
+	local antiCurve = SA['Anti Curve']
+	if not antiCurve or not antiCurve['Enabled'] then return false end
+	if antiCurve['Mode'] ~= 'Angles' then return false end
+	
+	local gunBarrel = getGunBarrel()
+	if not gunBarrel then return false end
+	
+	local barrelPos = gunBarrel.Position
+	local cameraPos = Camera.CFrame.Position
+	local mousePos = UserInputService:GetMouseLocation()
+	local mouseRay = Camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+	
+	local toTarget = (targetPosition - cameraPos).Unit
+	local aimDirection = mouseRay.Direction.Unit
+	local dotProduct = toTarget:Dot(aimDirection)
+	dotProduct = math.clamp(dotProduct, -1, 1)
+	local angle = math.deg(math.acos(dotProduct))
+	
+	local distanceToTarget = (targetPosition - barrelPos).Magnitude
+	local maxDistance = antiCurve['Angles']['Distance Threshold'] or 100
+	local maxAngle = antiCurve['Angles']['Max Angle'] or 15
+	
+	if antiCurve['Angles']['Debug Print'] then
+		print(string.format("[Anti-Curve Debug] Current Angle: %.2f° | Max Angle: %.2f° | Distance: %.2f studs | Threshold: %.2f studs",
+			angle, maxAngle, distanceToTarget, maxDistance))
+	end
+	
+	-- Block if within distance threshold and angle exceeds maximum
+	if distanceToTarget <= maxDistance and angle > maxAngle then
+		return true
+	end
+	
+	return false
+end
+
 local function getPredictedPosition(part)
+	-- Use Da Hood prediction method when in Da Hood (exact same as standalone)
+	if isDaHood then
+		if not part then return Vector3.new() end
+		local velocity = part.AssemblyLinearVelocity
+		local prediction = 0.133 -- Default Da Hood prediction
+		
+		-- Auto-prediction for Da Hood (same as standalone script)
+		if SA['Auto Prediction'] and SA['Auto Prediction']['Enabled'] then
+			local ping = LocalPlayer:GetNetworkPing() * 1000
+			if ping < 50 then
+				prediction = 0.12
+			elseif ping < 100 then
+				prediction = 0.133
+			elseif ping < 150 then
+				prediction = 0.15
+			else
+				prediction = 0.17
+			end
+		end
+		
+		-- Da Hood prediction: position + (velocity * prediction)
+		return part.Position + (velocity * prediction)
+	end
+	
+	-- Standard prediction for other games
 	local pred = SA['Prediction']
 	if not pred then return part.Position end
 	local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
@@ -290,6 +430,7 @@ setreadonly(grm, false)
 local currentPlaceId = game.PlaceId
 local isPrisonWars   = currentPlaceId == 155615604
 local isArsenal      = currentPlaceId == 286090429
+local isDaHood       = currentPlaceId == 2788229376
 
 -- Client Redirection Helper
 local function isClientRedirectionWeapon()
@@ -320,6 +461,175 @@ if isPrisonWars or isArsenal then
 		end
 		return oldNamecall(...)
 	end))
+	
+	-- Standard Mouse.Hit hook for Prison Wars and Arsenal
+	grm.__index = function(self, key)
+		if not checkcaller() and self == Mouse and SA and SA['Enabled'] then
+			if key == "Hit" or key == "Target" then
+				if isHoldingKnife() or not currentTarget or shouldSkipTarget() then return oldIndex(self, key) end
+				-- Hit Chance check
+				if SA['Hit Chance'] and SA['Hit Chance'] < 100 then
+					if math.random(1, 100) > SA['Hit Chance'] then
+						return oldIndex(self, key)
+					end
+				end
+				local char = currentTarget.Parent
+				if not char then return oldIndex(self, key) end
+				local rp = Players:GetPlayerFromCharacter(char)
+				if rp and (isPlayerKnockedOrKO(rp) or isPlayerGrabbed(rp)) then return oldIndex(self, key) end
+				if not rp then
+					local hum = char:FindFirstChildOfClass('Humanoid')
+					if not hum or hum.Health <= 0 then return oldIndex(self, key) end
+				end
+				if not canSeeTarget(currentTarget) then return oldIndex(self, key) end
+				
+				-- Determine aim part and position based on Hit Part setting
+				local hp = SA['Hit Part']
+				local aimPart, aimPosition
+				
+				if hp == 'Closest Part' then
+					aimPart = currentTarget
+					aimPosition = currentTarget.Position
+				elseif hp == 'Closest Point' then
+					aimPart = getClosestBodyPart(char) or currentTarget
+					aimPosition = getClosestPoint(aimPart, false)
+				else
+					aimPart = char:FindFirstChild(hp) or currentTarget
+					aimPosition = aimPart.Position
+				end
+				
+				-- Apply prediction
+				local predictedPosition = getPredictedPosition(aimPart)
+				if hp == 'Closest Point' then
+					-- For closest point, use the calculated position with prediction applied to the part
+					local velocity = aimPart.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
+					local pred = SA['Prediction']
+					if not isDaHood and pred then
+						local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
+						local scale = math.clamp((aimPosition - Camera.CFrame.Position).Magnitude / 100, 0.05, 1)
+						predictedPosition = aimPosition + Vector3.new(velocity.X*px*scale, velocity.Y*py*scale, velocity.Z*pz*scale)
+					else
+						predictedPosition = aimPosition
+					end
+				end
+				
+				-- Anti-Curve check
+				if shouldBlockAntiCurve(aimPart, predictedPosition) then
+					return oldIndex(self, key)
+				end
+				
+				if key == "Target" then return aimPart end
+				return CFrame.new(predictedPosition)
+			end
+		end
+		return oldIndex(self, key)
+	end
+elseif isDaHood then
+	-- Da Hood Silent Aim - Using exact methods from standalone script
+	
+	-- Da Hood specific targeting function (same as standalone)
+	local function daHoodFindClosestTarget()
+		if not SA or not SA['Enabled'] then return nil end
+		
+		local closestTarget = nil
+		local shortestDistance = math.huge
+		local mousePos = UserInputService:GetMouseLocation()
+		local fovLimit = (SA['FOV']['Enabled'] and SA['FOV']['Size']) or math.huge
+		
+		for _, player in pairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer and player.Character then
+				local character = player.Character
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.Health > 0 then
+					-- Check if downed (Da Hood specific)
+					local bodyEffects = character:FindFirstChild("BodyEffects")
+					if bodyEffects then
+						local ko = bodyEffects:FindFirstChild("K.O")
+						if ko and ko.Value then continue end
+					end
+					
+					-- Check if grabbed (Da Hood specific)
+					if character:FindFirstChild("GRABBING_CONSTRAINT") then continue end
+					
+					local targetPart = character:FindFirstChild(SA['Hit Part'] or 'HumanoidRootPart')
+					if targetPart then
+						local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+						if onScreen then
+							local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+							if distance <= fovLimit and distance < shortestDistance then
+								shortestDistance = distance
+								closestTarget = targetPart
+							end
+						end
+					end
+				end
+			end
+		end
+		
+		return closestTarget
+	end
+	
+	-- Method 1: Mouse.Hit/__index Hook (Most Reliable)
+	grm.__index = function(self, key)
+		if not checkcaller() and self == Mouse and SA and SA['Enabled'] and isLocking and currentTarget then
+			if key == "Hit" then
+				local predictedPos = getPredictedPosition(currentTarget)
+				return CFrame.new(predictedPos)
+			elseif key == "Target" then
+				return currentTarget
+			end
+		end
+		return oldIndex(self, key)
+	end
+	
+	-- Method 2: __namecall Hook for RemoteEvents (EXACT same as standalone)
+	local oldNamecall
+	oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+		local method = getnamecallmethod()
+		local args = {...}
+		
+		if not checkcaller() and method == "FireServer" and SA and SA['Enabled'] and isLocking and currentTarget then
+			-- Da Hood UpdateMousePosI hook (EXACT same as standalone)
+			if tostring(self) == "UpdateMousePosI" or tostring(self):find("UpdateMousePos") then
+				local predictedPos = getPredictedPosition(currentTarget)
+				args[1] = predictedPos
+				return oldNamecall(self, table.unpack(args))
+			end
+			
+			-- General remote hook for position arguments (EXACT same as standalone)
+			for i, arg in pairs(args) do
+				if typeof(arg) == "Vector3" then
+					local predictedPos = getPredictedPosition(currentTarget)
+					args[i] = predictedPos
+					break
+				end
+			end
+		end
+		
+		-- Method 3: Raycast Hook (EXACT same as standalone)
+		if method == "Raycast" and self == Workspace and SA and SA['Enabled'] and isLocking and currentTarget then
+			local origin = args[1]
+			local predictedPos = getPredictedPosition(currentTarget)
+			local direction = (predictedPos - origin).Unit * 1000
+			args[2] = direction
+		end
+		
+		return oldNamecall(self, table.unpack(args))
+	end)
+	
+	-- Da Hood targeting loop (same as standalone)
+	RunService.RenderStepped:Connect(function()
+		if isDaHood and SA and SA['Enabled'] then
+			local target = daHoodFindClosestTarget()
+			if target then
+				currentTarget = target
+				isLocking = true
+			else
+				currentTarget = nil
+				isLocking = false
+			end
+		end
+	end)
 else
 	grm.__index = function(self, key)
 		if not checkcaller() and self == Mouse and SA and SA['Enabled'] then
@@ -340,10 +650,44 @@ else
 					if not hum or hum.Health <= 0 then return oldIndex(self, key) end
 				end
 				if not canSeeTarget(currentTarget) then return oldIndex(self, key) end
-				local hp      = SA['Hit Part']
-				local aimPart = (hp == 'Closest Part') and currentTarget or (char:FindFirstChild(hp) or currentTarget)
+				
+				-- Determine aim part and position based on Hit Part setting
+				local hp = SA['Hit Part']
+				local aimPart, aimPosition
+				
+				if hp == 'Closest Part' then
+					aimPart = currentTarget
+					aimPosition = currentTarget.Position
+				elseif hp == 'Closest Point' then
+					aimPart = getClosestBodyPart(char) or currentTarget
+					aimPosition = getClosestPoint(aimPart, false)
+				else
+					aimPart = char:FindFirstChild(hp) or currentTarget
+					aimPosition = aimPart.Position
+				end
+				
+				-- Apply prediction
+				local predictedPosition = getPredictedPosition(aimPart)
+				if hp == 'Closest Point' then
+					-- For closest point, use the calculated position with prediction applied to the part
+					local velocity = aimPart.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
+					local pred = SA['Prediction']
+					if pred then
+						local px, py, pz = pred['X'] or 0, pred['Y'] or 0, pred['Z'] or 0
+						local scale = math.clamp((aimPosition - Camera.CFrame.Position).Magnitude / 100, 0.05, 1)
+						predictedPosition = aimPosition + Vector3.new(velocity.X*px*scale, velocity.Y*py*scale, velocity.Z*pz*scale)
+					else
+						predictedPosition = aimPosition
+					end
+				end
+				
+				-- Anti-Curve check
+				if shouldBlockAntiCurve(aimPart, predictedPosition) then
+					return oldIndex(self, key)
+				end
+				
 				if key == "Target" then return aimPart end
-				return CFrame.new(getPredictedPosition(aimPart))
+				return CFrame.new(predictedPosition)
 			end
 		end
 		return oldIndex(self, key)
