@@ -1370,130 +1370,59 @@ do
 end
 
 -- ============================================================================
---  HUD
+--  CLEAN CENTER HUD (BITCOIN STYLE)
 -- ============================================================================
-local hudGui = nil
 
-do
-	local HUD_C = CFG['General']['HUD']
-	if HUD_C['Enabled'] then
-		for _, gui in ipairs({game:GetService("CoreGui"), LocalPlayer:WaitForChild("PlayerGui")}) do
-			local old = gui:FindFirstChild("VyronHUD")
-			if old then pcall(function() old:Destroy() end) end
-		end
+local hudGui = Instance.new("ScreenGui")
+hudGui.Name = "VyronHUD"
+hudGui.ResetOnSpawn = false
+hudGui.IgnoreGuiInset = true
+hudGui.Parent = game:GetService("CoreGui")
 
-		hudGui = Instance.new("ScreenGui")
-		hudGui.Name = "VyronHUD"; hudGui.ResetOnSpawn = false
-		hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; hudGui.IgnoreGuiInset = true
-		pcall(function() hudGui.Parent = game:GetService("CoreGui") end)
-		if not hudGui.Parent then hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
-		print("[Vyron] HUD created")
+local mainLabel = Instance.new("TextLabel", hudGui)
+mainLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+mainLabel.Position = UDim2.new(0.5, 0, 0.35, 0)
+mainLabel.Size = UDim2.new(0, 300, 0, 50)
+mainLabel.BackgroundTransparency = 1
+mainLabel.Font = Enum.Font.SourceSansBold
+mainLabel.TextScaled = true
+mainLabel.Text = "vyron"
+mainLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+mainLabel.TextStrokeTransparency = 0.3
 
-		local frame = Instance.new("Frame", hudGui)
-		frame.BackgroundTransparency = 1
-		frame.AnchorPoint = Vector2.new(1, 0.5)
-		frame.Position = UDim2.new(1, 0, 0.5, 0)
-		frame.Size = UDim2.new(0, 0, 0, 0)
-		frame.AutomaticSize = Enum.AutomaticSize.Y
+local subLabel = Instance.new("TextLabel", hudGui)
+subLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+subLabel.Position = UDim2.new(0.5, 0, 0.42, 0)
+subLabel.Size = UDim2.new(0, 400, 0, 30)
+subLabel.BackgroundTransparency = 1
+subLabel.Font = Enum.Font.SourceSans
+subLabel.TextScaled = true
+subLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+subLabel.TextStrokeTransparency = 0.5
 
-		local layout = Instance.new("UIListLayout", frame)
-		layout.FillDirection = Enum.FillDirection.Vertical
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-		layout.VerticalAlignment = Enum.VerticalAlignment.Center
-		layout.Padding = UDim.new(0, 4)
-		layout.SortOrder = Enum.SortOrder.LayoutOrder
+RunService.RenderStepped:Connect(function()
+	if isShutdown then return end
 
-		local function makeLabel(size, order)
-			local lbl = Instance.new("TextLabel", frame)
-			lbl.BackgroundTransparency = 1
-			lbl.Size = UDim2.new(0, 0, 0, size + 4)
-			lbl.AutomaticSize = Enum.AutomaticSize.X
-			lbl.Font = Enum.Font.SourceSansBold
-			lbl.TextSize = size
-			lbl.TextStrokeTransparency = 0.4
-			lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-			lbl.RichText = true
-			lbl.Text = ""; lbl.Visible = false
-			lbl.LayoutOrder = order
-			return lbl
-		end
+	local features = {}
 
-		local titleLbl = makeLabel(24, 0)
-		local lblSA    = makeLabel(13, 1)
-		local lblCL    = makeLabel(13, 2)
-		local lblTB    = makeLabel(13, 3)
-		local lblRF    = makeLabel(13, 4)
-		local lblSM    = makeLabel(13, 5)
-		local lblIR    = makeLabel(13, 6)
-		local lblSPD   = makeLabel(13, 7)
-		local lblESP   = makeLabel(13, 8)
-
-		local function rgb(c)
-			return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
-		end
-
-		local function fmt(name, targetName)
-			local FC = rgb(HUD_C['Feature Color'] or Color3.fromRGB(255,255,255))
-			local AC = rgb(HUD_C['Active Color']  or Color3.fromRGB(100,255,100))
-			if targetName then
-				return string.format('<font color="%s">%s </font><font color="%s">(%s)</font>', FC, name, AC, targetName)
-			end
-			return string.format('<font color="%s">%s</font>', FC, name)
-		end
-
-		local function getTargetName()
-			local char = nil
-			if camLocked and camTarget and camTarget.Parent then char = camTarget.Parent
-			elseif isLocking and currentTarget and currentTarget.Parent then char = currentTarget.Parent end
-			if not char then return nil end
-			local p = Players:GetPlayerFromCharacter(char)
-			return p and p.Name or char.Name
-		end
-
-		RunService.Heartbeat:Connect(function()
-			if isShutdown then return end
-			frame.Position = UDim2.new(1, -10, 0.5, 0)
-			local tname = getTargetName()
-			local TC = HUD_C['Title Color'] or Color3.fromRGB(180, 180, 180)
-
-			titleLbl.Visible = true
-			titleLbl.Text = string.format('<font color="%s">Vyron</font>', rgb(TC))
-
-			if SA['Enabled'] and isLocking then
-				lblSA.Visible = true; lblSA.Text = fmt("Silent Aim", tname)
-			else lblSA.Visible = false end
-
-			if CL_C['Enabled'] and camLocked then
-				lblCL.Visible = true; lblCL.Text = fmt("Cam Lock", tname)
-			else lblCL.Visible = false end
-
-			if TB_C and TB_C['Enabled'] and tbActive then
-				lblTB.Visible = true; lblTB.Text = fmt("Trigger Bot", tbTarget and tbTarget.Name or nil)
-			else lblTB.Visible = false end
-
-			if SPD_C['Enabled'] and speedEnabled then
-				lblSPD.Visible = true; lblSPD.Text = fmt("WalkSpeed", nil)
-			else lblSPD.Visible = false end
-
-			local rfActive = CFG['Rapid Fire']['Enabled'] and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-			if rfActive then
-				lblRF.Visible = true; lblRF.Text = fmt("Rapid Fire", nil)
-			else lblRF.Visible = false end
-
-			if CFG['Spread Modifier']['Enabled'] then
-				lblSM.Visible = true; lblSM.Text = fmt("Spread Mod", nil)
-			else lblSM.Visible = false end
-
-			if CFG['Infinite Range']['Enabled'] then
-				lblIR.Visible = true; lblIR.Text = fmt("Inf Range", nil)
-			else lblIR.Visible = false end
-
-			if ESP_C['Enabled'] then
-				lblESP.Visible = true; lblESP.Text = fmt("ESP", nil)
-			else lblESP.Visible = false end
-		end)
+	if SA and SA.Enabled and isLocking then
+		table.insert(features, "Silent")
 	end
-end
+
+	if TB_C and TB_C.Enabled and tbActive then
+		table.insert(features, "Trigger")
+	end
+
+	if CL_C and CL_C.Enabled and camLocked then
+		table.insert(features, "Assist")
+	end
+
+	if ESP_C and ESP_C.Enabled then
+		table.insert(features, "ESP")
+	end
+
+	subLabel.Text = table.concat(features, " | ")
+end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
