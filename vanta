@@ -153,7 +153,7 @@ local function getClosestBodyPart(character)
 end
 
 local function getPredictedPosition(part)
-	-- Use Da Hood prediction method when in Da Hood
+	-- Use Da Hood prediction method when in Da Hood (exact same as standalone)
 	if isDaHood then
 		if not part then return Vector3.new() end
 		local velocity = part.AssemblyLinearVelocity
@@ -173,6 +173,7 @@ local function getPredictedPosition(part)
 			end
 		end
 		
+		-- Da Hood prediction: position + (velocity * prediction)
 		return part.Position + (velocity * prediction)
 	end
 	
@@ -349,53 +350,47 @@ elseif isDaHood then
 	-- Da Hood Silent Aim - Using exact methods from standalone script
 	-- Method 1: Mouse.Hit/__index Hook (Most Reliable)
 	grm.__index = function(self, key)
-		if not checkcaller() and self == Mouse and SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
-			if not isHoldingKnife() then
-				if key == "Hit" then
-					local predictedPos = getPredictedPosition(currentTarget)
-					return CFrame.new(predictedPos)
-				elseif key == "Target" then
-					return currentTarget
-				end
+		if not checkcaller() and self == Mouse and SA and SA['Enabled'] and isLocking and currentTarget then
+			if key == "Hit" then
+				local predictedPos = getPredictedPosition(currentTarget)
+				return CFrame.new(predictedPos)
+			elseif key == "Target" then
+				return currentTarget
 			end
 		end
 		return oldIndex(self, key)
 	end
 	
-	-- Method 2: __namecall Hook for RemoteEvents
+	-- Method 2: __namecall Hook for RemoteEvents (Exact same as standalone)
 	local oldNamecall
 	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 		local method = getnamecallmethod()
 		local args = {...}
 		
-		if not checkcaller() and method == "FireServer" and SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
-			if not isHoldingKnife() then
-				-- Da Hood UpdateMousePosI hook
-				if tostring(self) == "UpdateMousePosI" or tostring(self):find("UpdateMousePos") then
+		if not checkcaller() and method == "FireServer" and SA and SA['Enabled'] and isLocking and currentTarget then
+			-- Da Hood UpdateMousePosI hook
+			if tostring(self) == "UpdateMousePosI" or tostring(self):find("UpdateMousePos") then
+				local predictedPos = getPredictedPosition(currentTarget)
+				args[1] = predictedPos
+				return oldNamecall(self, table.unpack(args))
+			end
+			
+			-- General remote hook for position arguments
+			for i, arg in pairs(args) do
+				if typeof(arg) == "Vector3" then
 					local predictedPos = getPredictedPosition(currentTarget)
-					args[1] = predictedPos
-					return oldNamecall(self, table.unpack(args))
-				end
-				
-				-- General remote hook for position arguments
-				for i, arg in pairs(args) do
-					if typeof(arg) == "Vector3" then
-						local predictedPos = getPredictedPosition(currentTarget)
-						args[i] = predictedPos
-						break
-					end
+					args[i] = predictedPos
+					break
 				end
 			end
 		end
 		
 		-- Method 3: Raycast Hook
-		if method == "Raycast" and self == Workspace and SA and SA['Enabled'] and currentTarget and currentTarget.Parent then
-			if not isHoldingKnife() then
-				local origin = args[1]
-				local predictedPos = getPredictedPosition(currentTarget)
-				local direction = (predictedPos - origin).Unit * 1000
-				args[2] = direction
-			end
+		if method == "Raycast" and self == Workspace and SA and SA['Enabled'] and isLocking and currentTarget then
+			local origin = args[1]
+			local predictedPos = getPredictedPosition(currentTarget)
+			local direction = (predictedPos - origin).Unit * 1000
+			args[2] = direction
 		end
 		
 		return oldNamecall(self, table.unpack(args))
